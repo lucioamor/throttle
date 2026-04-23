@@ -121,6 +121,7 @@
       <style>
         :host { all: initial; }
         .capsule {
+          position: relative;
           display: flex;
           align-items: center;
           height: 34px;
@@ -139,6 +140,10 @@
           transition: box-shadow 0.3s ease, border-color 0.3s ease, max-width 0.4s cubic-bezier(0.4,0,0.2,1);
           max-width: 380px;
           cursor: default;
+        }
+        .capsule[data-locked="true"] {
+          border-color: rgba(239,68,68,0.45);
+          box-shadow: 0 4px 18px rgba(220,38,38,0.22);
         }
         .capsule[data-status="red"]    { border-color: rgba(239,68,68,0.45);  box-shadow: 0 4px 16px rgba(220,38,38,0.22); }
         .capsule[data-status="yellow"] { border-color: rgba(234,179,8,0.35); }
@@ -221,6 +226,33 @@
 
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
         @media (max-width: 500px) { .bar-wrap { width: 32px; } .passive-badges { display: none; } }
+
+        .lock-overlay {
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          background: rgba(10, 10, 12, 0.78);
+          backdrop-filter: blur(2px);
+          -webkit-backdrop-filter: blur(2px);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 0 12px;
+          pointer-events: none;
+          z-index: 2;
+        }
+        .capsule[data-locked="true"] .lock-overlay { display: flex; }
+        .lock-title {
+          font-size: 10px;
+          font-weight: 700;
+          color: #fca5a5;
+          letter-spacing: 0.04em;
+        }
+        .lock-sub {
+          font-size: 10px;
+          color: #d4d4d8;
+        }
       </style>
 
       <div class="capsule" id="capsule" title="Throttle Lovable — clique para detalhes">
@@ -269,6 +301,11 @@
         <!-- Hover expand: reset diário + msg mensal -->
         <span class="extra" id="extra-msg">—</span>
 
+        <div class="lock-overlay" id="lock-overlay">
+          <span class="lock-title" id="lock-title">Limite esgotado</span>
+          <span class="lock-sub" id="lock-sub">reset —</span>
+        </div>
+
       </div>
     `;
 
@@ -282,6 +319,10 @@
 
   function unmountBar() {
     if (host) { host.remove(); host = null; shadow = null; }
+  }
+
+  function isHighRiskUiState(uiState, isLocked) {
+    return isLocked || uiState === 'critical';
   }
 
   // -------- Render --------
@@ -299,9 +340,13 @@
     } = analysis;
 
     const uiState = analysis.uiState || 'loading';
+    const lockOverlay = analysis.lockOverlay || { active: false };
+    const isLocked = !!lockOverlay.active;
 
     const capsule = shadow.getElementById('capsule');
-    capsule.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
+    const highRisk = isHighRiskUiState(uiState, isLocked);
+    capsule.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
+    capsule.dataset.locked = isLocked ? 'true' : 'false';
 
     // TODAY PACE
     const needle   = shadow.getElementById('needle');
@@ -312,7 +357,7 @@
       const angle = -90 + (Math.min(Math.max(todayPace, 0), 200) / 200) * 180;
       needle.style.transform = `rotate(${angle}deg)`;
       paceEl.textContent = Math.round(todayPace);
-      paceEl.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
+      paceEl.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
     } else {
       paceEl.textContent = '—';
       paceEl.dataset.status = 'green';
@@ -327,7 +372,7 @@
     dotsEl.innerHTML = '';
     const total = dailyTotal || 5;
     const used  = total - (dailyRemaining ?? 0);
-    const warn  = uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical';
+    const warn  = highRisk;
     for (let i = 0; i < total; i++) {
       const dot = document.createElement('div');
       dot.className = i < used ? 'dot used' : 'dot avail';
@@ -343,7 +388,7 @@
     const monthPctEl = shadow.getElementById('monthly-pct');
     if (monthlyPct !== null) {
       let color = '#22c55e';
-      if (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') color = '#ef4444';
+      if (highRisk) color = '#ef4444';
       else if (uiState === 'attention') color = '#eab308';
       monthFill.style.width = `${Math.min(monthlyPct, 100)}%`;
       monthFill.style.background = color;
@@ -357,7 +402,7 @@
     const badgeCloud = shadow.getElementById('badge-cloud');
     const badgeAi    = shadow.getElementById('badge-ai');
 
-    const uiRisk = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : null);
+    const uiRisk = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : null);
 
     if (uiRisk && cloudPct !== null) {
       badgeCloud.classList.remove('hidden');
@@ -386,6 +431,11 @@
       msg += monthlyBurnStatus === 'red' ? 'ciclo em risco' : 'burn elevado';
     }
     extraEl.textContent = msg;
+
+    const lockTitle = shadow.getElementById('lock-title');
+    const lockSub = shadow.getElementById('lock-sub');
+    if (lockTitle) lockTitle.textContent = lockOverlay.title || 'Limite esgotado';
+    if (lockSub) lockSub.textContent = lockOverlay.detail || 'reset —';
   }
 
   function fmtMin(min) {

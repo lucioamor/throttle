@@ -80,6 +80,7 @@
 
         /* Cápsula principal */
         .capsule {
+          position: relative;
           display: flex;
           align-items: center;
           height: 34px;
@@ -98,6 +99,10 @@
           transition: box-shadow 0.3s ease, border-color 0.3s ease, max-width 0.4s cubic-bezier(0.4,0,0.2,1);
           max-width: 340px;
           cursor: default;
+        }
+        .capsule[data-locked="true"] {
+          border-color: rgba(239, 68, 68, 0.45);
+          box-shadow: 0 4px 18px rgba(220,38,38,0.25);
         }
 
         /* Estado de risco: borda fica mais visível */
@@ -245,6 +250,35 @@
           .aux { display: none; }
           .bar-wrap { width: 36px; }
         }
+
+        .lock-overlay {
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          background: rgba(10, 10, 12, 0.78);
+          backdrop-filter: blur(2px);
+          -webkit-backdrop-filter: blur(2px);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 0 12px;
+          pointer-events: none;
+          z-index: 2;
+        }
+        .capsule[data-locked="true"] .lock-overlay {
+          display: flex;
+        }
+        .lock-title {
+          font-size: 10px;
+          font-weight: 700;
+          color: #fca5a5;
+          letter-spacing: 0.04em;
+        }
+        .lock-sub {
+          font-size: 10px;
+          color: #d4d4d8;
+        }
       </style>
 
       <div class="capsule" id="capsule" title="Throttle — clique para atualizar">
@@ -286,22 +320,33 @@
         <!-- Expansão no hover: msg operacional + detalhe 7D -->
         <span class="extra" id="extra-msg">—</span>
 
+        <div class="lock-overlay" id="lock-overlay">
+          <span class="lock-title" id="lock-title">Limite esgotado</span>
+          <span class="lock-sub" id="lock-sub">reset —</span>
+        </div>
+
       </div>
     `;
 
     document.documentElement.appendChild(host);
 
     shadow.getElementById('capsule').addEventListener('click', () => {
+      const accountId = getAccountId();
+      if (!accountId) return;
       safeSendMessage({
         type: 'FORCE_POLL',
         provider: 'claude',
-        accountId: getAccountId()
+        accountId
       });
     });
   }
 
   function unmountBar() {
     if (host) { host.remove(); host = null; shadow = null; }
+  }
+
+  function isHighRiskUiState(uiState, isLocked) {
+    return isLocked || uiState === 'critical';
   }
 
   // -------- Render --------
@@ -311,9 +356,13 @@
 
     const { latest, minutesToReset5h, minutesToReset7d, rpmBlend, trend, operationalMsg, eta15 } = analysis;
     const uiState = analysis.uiState || 'loading';
+    const lockOverlay = analysis.lockOverlay || { active: false };
+    const isLocked = !!lockOverlay.active;
 
     const capsule = shadow.getElementById('capsule');
-    capsule.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
+    const highRisk = isHighRiskUiState(uiState, isLocked);
+    capsule.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
+    capsule.dataset.locked = isLocked ? 'true' : 'false';
 
     // --- Velocímetro ---
     const needle = shadow.getElementById('needle');
@@ -326,7 +375,7 @@
       const angle = -90 + (clamped / 200) * 180;
       needle.style.transform = `rotate(${angle}deg)`;
       paceEl.textContent = Math.round(rpmBlend);
-      paceEl.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
+      paceEl.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
     } else {
       paceEl.textContent = '—';
       paceEl.dataset.status = 'green';
@@ -353,7 +402,7 @@
       const pct5h = shadow.getElementById('pct-5h');
       const aux5h = shadow.getElementById('aux-5h');
 
-      const color5h = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? '#ef4444' : (uiState === 'attention' ? '#eab308' : '#22c55e');
+      const color5h = highRisk ? '#ef4444' : (uiState === 'attention' ? '#eab308' : '#22c55e');
 
       fill5h.style.width = `${Math.min(latest.u5h, 100)}%`;
       fill5h.style.background = color5h;
@@ -373,7 +422,7 @@
     // --- Badge 7D ---
     const badge7d = shadow.getElementById('badge-7d');
     if (latest.u7d !== null) {
-      badge7d.dataset.risk = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'high' : (uiState === 'attention' ? 'medium' : 'low');
+      badge7d.dataset.risk = highRisk ? 'high' : (uiState === 'attention' ? 'medium' : 'low');
       badge7d.textContent = `7D ${latest.u7d.toFixed(0)}%`;
       badge7d.title = `Janela semanal: ${latest.u7d.toFixed(1)}% — reset ${fmtMin(minutesToReset7d)}`;
     } else {
@@ -388,6 +437,11 @@
     } else {
       extraEl.textContent = '';
     }
+
+    const lockTitle = shadow.getElementById('lock-title');
+    const lockSub = shadow.getElementById('lock-sub');
+    if (lockTitle) lockTitle.textContent = lockOverlay.title || 'Limite esgotado';
+    if (lockSub) lockSub.textContent = lockOverlay.detail || 'reset —';
   }
 
   function fmtMin(min) {
@@ -432,10 +486,12 @@
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = setTimeout(() => {
         if (!isExtensionContextAlive()) return;
+        const accountId = getAccountId();
+        if (!accountId) return;
         safeSendMessage({
           type: 'FORCE_POLL',
           provider: 'claude',
-          accountId: getAccountId()
+          accountId
         });
       }, 3500);
     } catch (err) {
@@ -449,10 +505,12 @@
   // -------- State subscription --------
 
   function requestState() {
+    const accountId = getAccountId();
+    if (!accountId) return;
     safeSendMessage({
       type: 'GET_STATE',
       provider: 'claude',
-      accountId: getAccountId()
+      accountId
     }, (resp) => {
       if (resp && resp.ok && resp.analysis) {
         currentAnalysis = resp.analysis;
@@ -465,17 +523,20 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type !== 'STATE_UPDATE' || msg.provider !== 'claude') return;
     const accountId = getAccountId();
-    if (accountId && msg.accountId && msg.accountId !== accountId) return;
+    if (!accountId) return;
+    if (msg.accountId && msg.accountId !== accountId) return;
     currentAnalysis = msg.analysis;
     render(msg.analysis);
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      const accountId = getAccountId();
+      if (!accountId) return;
       safeSendMessage({
         type: 'FORCE_POLL',
         provider: 'claude',
-        accountId: getAccountId()
+        accountId
       });
     }
   });
@@ -516,7 +577,9 @@
       typeof msg.orgId === 'string' &&
       msg.token === token
     ) {
+      const changed = tabOrgId !== msg.orgId;
       tabOrgId = msg.orgId;
+      if (changed) requestState();
     }
   });
 

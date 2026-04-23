@@ -99,6 +99,8 @@ function shortProviderSuffix(providerId) {
 async function render() {
   if (!currentAccountId) currentAccountId = await getActiveProviderId(activeProvider);
   if (!currentAccountId) {
+    renderPanelLockOverlay('claude', null);
+    renderPanelLockOverlay('lovable', null);
     setStatusMsg(activeProvider === 'claude'
       ? 'Abra claude.ai para inicializar'
       : 'Abra lovable.dev para inicializar');
@@ -109,16 +111,28 @@ async function render() {
 
   if (activeProvider === 'claude') {
     const analysis = analyze(snapshots);
-    if (!analysis.ready) { setStatusMsg('Aguardando primeiro snapshot...'); return; }
+    if (!analysis.ready) {
+      renderPanelLockOverlay('claude', null);
+      setStatusMsg('Aguardando primeiro snapshot...');
+      return;
+    }
     renderClaudeSpeedo(analysis);
     renderClaudeStats(analysis);
     renderHeatmap(snapshots);
     renderFooter(analysis);
+    renderPanelLockOverlay('claude', analysis.lockOverlay);
+    renderPanelLockOverlay('lovable', null);
   } else {
     const analysis = analyzeLovable(snapshots);
-    if (!analysis.ready) { setStatusMsg('Aguardando dados do Lovable...'); return; }
+    if (!analysis.ready) {
+      renderPanelLockOverlay('lovable', null);
+      setStatusMsg('Aguardando dados do Lovable...');
+      return;
+    }
     renderLovablePanel(analysis);
     renderFooter(analysis);
+    renderPanelLockOverlay('lovable', analysis.lockOverlay);
+    renderPanelLockOverlay('claude', null);
   }
 }
 
@@ -126,16 +140,36 @@ function setStatusMsg(msg) {
   document.getElementById('speedo-legend').textContent = msg;
 }
 
-function legendToneFromUiState(uiState) {
-  if (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') return 'warn';
+function isUiStateCritical(uiState) {
+  return uiState === 'critical';
+}
+
+function legendToneFromUiState(uiState, lockActive) {
+  if (lockActive || isUiStateCritical(uiState)) return 'warn';
   if (uiState === 'idle' || uiState === 'healthy') return 'ok';
   return '';
 }
 
-function barColorFromUiState(uiState) {
-  if (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') return '#ef4444';
+function barColorFromUiState(uiState, lockActive) {
+  if (lockActive || isUiStateCritical(uiState)) return '#ef4444';
   if (uiState === 'attention') return '#eab308';
   return '#22c55e';
+}
+
+function renderPanelLockOverlay(panel, lockOverlay) {
+  const root = document.getElementById(`panel-${panel}-lock`);
+  if (!root) return;
+
+  const active = !!lockOverlay?.active;
+  root.hidden = !active;
+  if (!active) return;
+
+  const title = document.getElementById(`panel-${panel}-lock-title`);
+  const sub = document.getElementById(`panel-${panel}-lock-sub`);
+  const icon = document.getElementById(`panel-${panel}-lock-icon`);
+  if (icon) icon.textContent = lockOverlay.icon || '🔒';
+  if (title) title.textContent = lockOverlay.title || 'Limite esgotado';
+  if (sub) sub.textContent = lockOverlay.detail || 'reset —';
 }
 
 // -------- Claude panel --------
@@ -146,7 +180,7 @@ function renderClaudeSpeedo(a) {
   const legend = document.getElementById('speedo-legend');
   const pace   = a.rpmBlend;
   const uiState = a.uiState || 'loading';
-  const u5h = Number.isFinite(a?.latest?.u5h) ? a.latest.u5h : null;
+  const lockOverlay = a.lockOverlay || { active: false };
 
   if (uiState === 'loading') { value.textContent = '—'; legend.textContent = 'Aguardando dados de pace'; return; }
   if (pace === null) { value.textContent = '—'; legend.textContent = 'Aguardando dados de pace'; return; }
@@ -156,12 +190,10 @@ function renderClaudeSpeedo(a) {
   value.textContent = Math.round(pace);
 
   legend.className = 'speedo-legend';
-  const tone = legendToneFromUiState(uiState);
+  const tone = legendToneFromUiState(uiState, lockOverlay.active);
   if (tone) legend.classList.add(tone);
-  if (uiState === 'locked_monthly') {
-    legend.textContent = `Limite mensal esgotado · reset ${formatETA(a.minutesToReset7d)}`;
-  } else if (uiState === 'locked_5h' || (u5h !== null && u5h >= 100)) {
-    legend.textContent = `Janela 5h esgotada · reset ${formatETA(a.minutesToReset5h)}`;
+  if (lockOverlay.active) {
+    legend.textContent = `${lockOverlay.title} · ${lockOverlay.detail}`;
   } else if (uiState === 'critical' || pace > 130) {
     legend.textContent = `Redline · zera ${formatETA(a.etaBlend)} · reset ${formatETA(a.minutesToReset5h)}`;
   } else if (uiState === 'attention' || pace > 105) {
@@ -176,11 +208,18 @@ function renderClaudeSpeedo(a) {
 function renderClaudeStats(a) {
   const l = a.latest;
   const uiState = a.uiState || 'loading';
+  const lockOverlay = a.lockOverlay || { active: false };
+  const stat5hWrap = document.getElementById('stat-5h-wrap');
+  if (stat5hWrap) stat5hWrap.classList.toggle('stat-disabled', lockOverlay.kind === 'monthly');
 
   if (l.u5h !== null) {
     const fill5h = document.getElementById('stat-5h-fill');
     fill5h.style.width  = `${Math.min(l.u5h, 100)}%`;
-    fill5h.style.background = barColorFromUiState(uiState);
+    if (lockOverlay.kind === 'monthly') {
+      fill5h.style.background = '#52525b';
+    } else {
+      fill5h.style.background = barColorFromUiState(uiState, lockOverlay.active);
+    }
     document.getElementById('stat-5h-pct').textContent   = `${l.u5h.toFixed(1)}%`;
     document.getElementById('stat-5h-reset').textContent = `reset ${formatETA(a.minutesToReset5h)}`;
     document.getElementById('stat-5h-eta15').textContent = formatETA(a.eta15);
@@ -218,6 +257,7 @@ function renderLovablePanel(a) {
   const todayNeedle  = document.getElementById('lv-speedo-needle');
   const todayVal     = document.getElementById('lv-speedo-value');
   const uiState = a.uiState || 'loading';
+  const lockOverlay = a.lockOverlay || { active: false };
 
   if (uiState !== 'loading' && a.todayPace !== null) {
     const angle = -90 + (Math.min(Math.max(a.todayPace, 0), 200) / 200) * 180;
@@ -225,11 +265,11 @@ function renderLovablePanel(a) {
     todayVal.textContent = Math.round(a.todayPace);
 
     todayLegend.className = 'speedo-legend';
-    const tone = legendToneFromUiState(uiState);
+    const tone = legendToneFromUiState(uiState, lockOverlay.active);
     if (tone) todayLegend.classList.add(tone);
 
-    if (uiState === 'locked_monthly') {
-      todayLegend.textContent = `Limite mensal esgotado · reset ${formatETA(a.minutesToMonthlyReset)}`;
+    if (lockOverlay.active) {
+      todayLegend.textContent = `${lockOverlay.title} · ${lockOverlay.detail}`;
     } else if (uiState === 'critical') {
       todayLegend.textContent = `Redline · esgota ${formatETA(a.etaDailyExhaust)} · reset ${formatETA(a.minutesToDailyReset)}`;
     } else if (uiState === 'attention') {
@@ -265,7 +305,7 @@ function renderLovablePanel(a) {
 
   if (a.monthlyPct !== null) {
     monthFill.style.width = `${Math.min(a.monthlyPct, 100)}%`;
-    monthFill.style.background = barColorFromUiState(uiState);
+    monthFill.style.background = barColorFromUiState(uiState, lockOverlay.active);
     monthPct.textContent  = `${a.monthlyPct.toFixed(1)}%`;
     monthSub.textContent  = `reset ${formatETA(a.minutesToMonthlyReset)}`;
     monthBurn.textContent = a.monthlyBurn !== null

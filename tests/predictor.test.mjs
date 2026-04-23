@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeRate, analyze, resolveUiState } from '../lib/predictor.js';
+import { computeRate, analyze, analyzeLovable, resolveUiState } from '../lib/predictor.js';
 
 test('computeRate returns null when values are not finite', () => {
   const now = Date.now();
@@ -62,6 +62,85 @@ test('analyze does not report zero pace when 5h window is exhausted', () => {
   assert.equal(result.status, 'red');
   assert.equal(result.rpmBlend, 100);
   assert.equal(result.eta15, 0);
+  assert.equal(result.lockOverlay.active, true);
+  assert.equal(result.lockOverlay.kind, 'window');
+  assert.equal(result.lockOverlay.icon, '⏳');
+  assert.ok(result.lockOverlay.detail.includes('h') || result.lockOverlay.detail.includes('min'));
+});
+
+test('analyze ignores stale monthly_exhausted flag when extra utilization is low', () => {
+  const now = Date.now();
+  const reset5h = new Date(now + 2 * 60 * 60 * 1000).toISOString();
+  const reset7d = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString();
+  const snaps = [
+    {
+      t: now - 60 * 60 * 1000,
+      u5h: 8,
+      u7d: 1,
+      reset5h,
+      reset7d,
+      extra_util: 1,
+      monthly_exhausted: true
+    },
+    {
+      t: now,
+      u5h: 10,
+      u7d: 1.5,
+      reset5h,
+      reset7d,
+      extra_util: 1,
+      monthly_exhausted: true
+    }
+  ];
+
+  const result = analyze(snaps);
+  assert.equal(result.ready, true);
+  assert.notEqual(result.uiState, 'locked_monthly');
+  assert.equal(result.lockOverlay.active, false);
+});
+
+test('analyzeLovable exposes monthly lock overlay when cycle is exhausted', () => {
+  const now = Date.now();
+  const snaps = [
+    {
+      t: now - 60 * 60 * 1000,
+      daily_used: 1,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 100,
+      monthly_total: 100,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      cloud_used: 1,
+      cloud_total: 10,
+      ai_used: 1,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    },
+    {
+      t: now,
+      daily_used: 2,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 100,
+      monthly_total: 100,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      cloud_used: 2,
+      cloud_total: 10,
+      ai_used: 2,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    }
+  ];
+
+  const result = analyzeLovable(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.uiState, 'locked_monthly');
+  assert.equal(result.lockOverlay.active, true);
+  assert.equal(result.lockOverlay.kind, 'monthly');
+  assert.equal(result.lockOverlay.icon, '🔒');
+  assert.ok(result.lockOverlay.detail.includes('/'));
 });
 
 test('resolveUiState returns locked_monthly when monthly credits are exhausted', () => {

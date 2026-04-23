@@ -106,7 +106,7 @@
     </div>
 
     <!-- ===== CLAUDE PANEL ===== -->
-    <div id="panel-claude">
+    <div id="panel-claude" class="provider-panel">
 
       <section class="speedo">
         <svg id="speedo-svg" viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet">
@@ -125,10 +125,15 @@
           <text x="120" y="128" fill="#9ca3af" font-size="10" letter-spacing="2" text-anchor="middle">PACE</text>
         </svg>
         <div class="speedo-legend" id="speedo-legend">—</div>
+        <div class="panel-lock-overlay" id="panel-claude-lock" hidden>
+          <div class="panel-lock-icon" id="panel-claude-lock-icon">🔒</div>
+          <div class="panel-lock-title" id="panel-claude-lock-title">Limite esgotado</div>
+          <div class="panel-lock-sub" id="panel-claude-lock-sub">reset —</div>
+        </div>
       </section>
 
       <section class="stats">
-        <div class="stat">
+        <div class="stat" id="stat-5h-wrap">
           <div class="stat-label">5-HOUR WINDOW</div>
           <div class="stat-bar"><div class="stat-fill" id="stat-5h-fill" style="width:0%"></div></div>
           <div class="stat-row">
@@ -183,7 +188,7 @@
     </div><!-- /panel-claude -->
 
     <!-- ===== LOVABLE PANEL ===== -->
-    <div id="panel-lovable" hidden>
+    <div id="panel-lovable" class="provider-panel" hidden>
 
       <!-- TODAY PACE speedo -->
       <section class="speedo">
@@ -201,6 +206,11 @@
           <text x="120" y="128" fill="#9ca3af" font-size="10" letter-spacing="2" text-anchor="middle">TODAY PACE</text>
         </svg>
         <div class="speedo-legend" id="lv-today-legend">—</div>
+        <div class="panel-lock-overlay" id="panel-lovable-lock" hidden>
+          <div class="panel-lock-icon" id="panel-lovable-lock-icon">🔒</div>
+          <div class="panel-lock-title" id="panel-lovable-lock-title">Limite esgotado</div>
+          <div class="panel-lock-sub" id="panel-lovable-lock-sub">reset —</div>
+        </div>
       </section>
 
       <section class="stats">

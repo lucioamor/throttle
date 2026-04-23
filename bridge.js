@@ -7,34 +7,60 @@ const ORG_ID_RE = /^[0-9a-f-]{8,128}$/i;
 ensureBridgeToken();
 
 window.addEventListener('message', (event) => {
-  if (event.source !== window) return;
-  const msg = event.data;
-  if (!isBridgeMessage(msg)) return;
+  try {
+    if (event.source !== window) return;
+    if (!isExtensionContextAlive()) return;
+    const msg = event.data;
+    if (!isBridgeMessage(msg)) return;
 
-  if (msg.type === 'USAGE_RESPONSE') {
-    chrome.runtime.sendMessage({
-      type: 'USAGE_INTERCEPTED',
-      orgId: msg.orgId,
-      data: msg.payload
-    }).catch(() => {});
-    return;
-  }
+    if (msg.type === 'USAGE_RESPONSE') {
+      safeSendMessage({
+        type: 'USAGE_INTERCEPTED',
+        orgId: msg.orgId,
+        data: msg.payload
+      });
+      return;
+    }
 
-  if (msg.type === 'ORG_SEEN') {
-    chrome.runtime.sendMessage({
-      type: 'ORG_SEEN',
-      orgId: msg.orgId
-    }).catch(() => {});
-    return;
-  }
+    if (msg.type === 'ORG_SEEN') {
+      // ORG_SEEN is consumed directly by content.js.
+      // Background org discovery already happens via webRequest and usage interception.
+      return;
+    }
 
-  if (msg.type === 'APP_START_METADATA') {
-    chrome.runtime.sendMessage({
-      type: 'CLAUDE_APP_START_METADATA',
-      data: msg.payload
-    }).catch(() => {});
+    if (msg.type === 'APP_START_METADATA') {
+      safeSendMessage({
+        type: 'CLAUDE_APP_START_METADATA',
+        data: msg.payload
+      });
+    }
+  } catch (_err) {
+    // Never throw from bridge listener.
   }
 });
+
+function isExtensionContextAlive() {
+  try {
+    return typeof chrome !== 'undefined'
+      && !!chrome.runtime
+      && typeof chrome.runtime.sendMessage === 'function'
+      && !!chrome.runtime.id;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function safeSendMessage(message) {
+  if (!isExtensionContextAlive()) return;
+  try {
+    const maybePromise = chrome.runtime.sendMessage(message);
+    if (maybePromise && typeof maybePromise.catch === 'function') {
+      maybePromise.catch(() => {});
+    }
+  } catch (_err) {
+    // Context may have been invalidated (e.g., extension reloaded).
+  }
+}
 
 function ensureBridgeToken() {
   const root = document.documentElement;

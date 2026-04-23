@@ -55,6 +55,17 @@ test('normalizeClaudeSnapshot marks monthly_exhausted from used vs limit', () =>
   assert.equal(snap.monthly_exhausted, true);
 });
 
+test('normalizeClaudeSnapshot does not treat utilization=1 as exhausted without corroborating amounts', () => {
+  const snap = normalizeClaudeSnapshot({
+    five_hour: { utilization: 10, resets_at: '2026-04-22T20:00:00Z' },
+    seven_day: { utilization: 5, resets_at: '2026-04-30T20:00:00Z' },
+    extra_usage: { utilization: 1 }
+  }, 12);
+
+  assert.equal(snap.extra_util, 1);
+  assert.equal(snap.monthly_exhausted, false);
+});
+
 test('normalizeClaudeAppStartMetadata keeps safe account/org metadata', () => {
   const metadata = normalizeClaudeAppStartMetadata({
     accountName: 'Test User',
