@@ -188,9 +188,11 @@ function renderClaudeStats(a) {
   }
 
   if (l.u7d !== null) {
-    const fill7d = document.getElementById('stat-7d-fill');
-    fill7d.style.width  = `${Math.min(l.u7d, 100)}%`;
-    fill7d.style.background = barColorFromUiState(uiState);
+    const mask7d = document.getElementById('stat-7d-mask');
+    const pct7d = Math.max(0, Math.min(l.u7d, 100));
+    if (mask7d) {
+      mask7d.style.left = `${pct7d}%`;
+    }
     document.getElementById('stat-7d-pct').textContent   = `${l.u7d.toFixed(1)}%`;
     document.getElementById('stat-7d-reset').textContent = `reset ${formatETA(a.minutesToReset7d)}`;
   }

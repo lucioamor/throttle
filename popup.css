@@ -156,6 +156,34 @@ html, body {
   transition: width 0.9s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease;
 }
 
+.stat-bar-spectrum {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-spectrum {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #3b82f6 0%,
+    #3b82f6 35%,
+    #22c55e 60%,
+    #eab308 80%,
+    #ef4444 100%
+  );
+}
+
+.progress-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0%;
+  background: #27272a;
+  transition: left 300ms ease;
+}
+
 .stat-row {
   display: flex;
   justify-content: space-between;
