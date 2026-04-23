@@ -42,6 +42,17 @@ test('normalizeClaudeSnapshot sanitizes values', () => {
   assert.equal(snap.extra_used, 10);
   assert.equal(snap.extra_limit, 20);
   assert.equal(snap.extra_util, 100);
+  assert.equal(snap.monthly_exhausted, false);
+});
+
+test('normalizeClaudeSnapshot marks monthly_exhausted from used vs limit', () => {
+  const snap = normalizeClaudeSnapshot({
+    five_hour: { utilization: 0, resets_at: '2026-04-22T20:00:00Z' },
+    seven_day: { utilization: 0, resets_at: '2026-04-30T20:00:00Z' },
+    extra_usage: { used_credits: 25, monthly_limit: 25, utilization: 99 }
+  }, 11);
+
+  assert.equal(snap.monthly_exhausted, true);
 });
 
 test('normalizeClaudeAppStartMetadata keeps safe account/org metadata', () => {
