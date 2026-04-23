@@ -309,27 +309,24 @@
   function render(analysis) {
     if (!shadow || !analysis || !analysis.ready) return;
 
-    const { latest, minutesToReset5h, minutesToReset7d, rpmBlend, trend, status, operationalMsg, etaBlend, eta15 } = analysis;
+    const { latest, minutesToReset5h, minutesToReset7d, rpmBlend, trend, operationalMsg, eta15 } = analysis;
+    const uiState = analysis.uiState || 'loading';
 
     const capsule = shadow.getElementById('capsule');
-    capsule.dataset.status = status;
+    capsule.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
 
     // --- Velocímetro ---
     const needle = shadow.getElementById('needle');
     const paceEl = shadow.getElementById('pace-val');
     const trendEl = shadow.getElementById('trend-arrow');
 
-    if (rpmBlend !== null) {
+    if (uiState !== 'loading' && rpmBlend !== null) {
       const clamped = Math.max(0, Math.min(200, rpmBlend));
       // Meia-circunferência: -90deg (esquerda) a +90deg (direita)
       const angle = -90 + (clamped / 200) * 180;
       needle.style.transform = `rotate(${angle}deg)`;
       paceEl.textContent = Math.round(rpmBlend);
-      let paceStatus = 'green';
-      if (rpmBlend > 130) paceStatus = 'red';
-      else if (rpmBlend > 105) paceStatus = 'yellow';
-      else if (rpmBlend < 50) paceStatus = 'blue';
-      paceEl.dataset.status = paceStatus;
+      paceEl.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
     } else {
       paceEl.textContent = '—';
       paceEl.dataset.status = 'green';
@@ -356,7 +353,7 @@
       const pct5h = shadow.getElementById('pct-5h');
       const aux5h = shadow.getElementById('aux-5h');
 
-      const color5h = latest.u5h >= 100 ? '#ef4444' : '#22c55e';
+      const color5h = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? '#ef4444' : (uiState === 'attention' ? '#eab308' : '#22c55e');
 
       fill5h.style.width = `${Math.min(latest.u5h, 100)}%`;
       fill5h.style.background = color5h;
@@ -376,10 +373,7 @@
     // --- Badge 7D ---
     const badge7d = shadow.getElementById('badge-7d');
     if (latest.u7d !== null) {
-      let risk7d = 'low';
-      if (latest.u7d >= 85) risk7d = 'high';
-      else if (latest.u7d >= 70) risk7d = 'medium';
-      badge7d.dataset.risk = risk7d;
+      badge7d.dataset.risk = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'high' : (uiState === 'attention' ? 'medium' : 'low');
       badge7d.textContent = `7D ${latest.u7d.toFixed(0)}%`;
       badge7d.title = `Janela semanal: ${latest.u7d.toFixed(1)}% — reset ${fmtMin(minutesToReset7d)}`;
     } else {

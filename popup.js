@@ -126,6 +126,18 @@ function setStatusMsg(msg) {
   document.getElementById('speedo-legend').textContent = msg;
 }
 
+function legendToneFromUiState(uiState) {
+  if (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') return 'warn';
+  if (uiState === 'idle' || uiState === 'healthy') return 'ok';
+  return '';
+}
+
+function barColorFromUiState(uiState) {
+  if (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') return '#ef4444';
+  if (uiState === 'attention') return '#eab308';
+  return '#22c55e';
+}
+
 // -------- Claude panel --------
 
 function renderClaudeSpeedo(a) {
@@ -133,8 +145,10 @@ function renderClaudeSpeedo(a) {
   const value  = document.getElementById('speedo-value');
   const legend = document.getElementById('speedo-legend');
   const pace   = a.rpmBlend;
+  const uiState = a.uiState || 'loading';
   const u5h = Number.isFinite(a?.latest?.u5h) ? a.latest.u5h : null;
 
+  if (uiState === 'loading') { value.textContent = '—'; legend.textContent = 'Aguardando dados de pace'; return; }
   if (pace === null) { value.textContent = '—'; legend.textContent = 'Aguardando dados de pace'; return; }
 
   const angle = -90 + (Math.min(Math.max(pace, 0), 200) / 200) * 180;
@@ -142,30 +156,31 @@ function renderClaudeSpeedo(a) {
   value.textContent = Math.round(pace);
 
   legend.className = 'speedo-legend';
-  if (u5h !== null && u5h >= 100) {
+  const tone = legendToneFromUiState(uiState);
+  if (tone) legend.classList.add(tone);
+  if (uiState === 'locked_monthly') {
+    legend.textContent = `Limite mensal esgotado · reset ${formatETA(a.minutesToReset7d)}`;
+  } else if (uiState === 'locked_5h' || (u5h !== null && u5h >= 100)) {
     legend.textContent = `Janela 5h esgotada · reset ${formatETA(a.minutesToReset5h)}`;
-    legend.classList.add('warn');
-  } else if (pace > 130) {
+  } else if (uiState === 'critical' || pace > 130) {
     legend.textContent = `Redline · zera ${formatETA(a.etaBlend)} · reset ${formatETA(a.minutesToReset5h)}`;
-    legend.classList.add('warn');
-  } else if (pace > 105) {
+  } else if (uiState === 'attention' || pace > 105) {
     legend.textContent = `Acima do pace · ETA ${formatETA(a.etaBlend)}`;
-  } else if (pace < 50) {
+  } else if (uiState === 'idle' || pace < 50) {
     legend.textContent = `Throttle folgado · reset ${formatETA(a.minutesToReset5h)}`;
-    legend.classList.add('ok');
   } else {
     legend.textContent = `Pace saudável · reset ${formatETA(a.minutesToReset5h)}`;
-    legend.classList.add('ok');
   }
 }
 
 function renderClaudeStats(a) {
   const l = a.latest;
+  const uiState = a.uiState || 'loading';
 
   if (l.u5h !== null) {
     const fill5h = document.getElementById('stat-5h-fill');
     fill5h.style.width  = `${Math.min(l.u5h, 100)}%`;
-    fill5h.style.background = l.u5h >= 100 ? '#ef4444' : '#22c55e';
+    fill5h.style.background = barColorFromUiState(uiState);
     document.getElementById('stat-5h-pct').textContent   = `${l.u5h.toFixed(1)}%`;
     document.getElementById('stat-5h-reset').textContent = `reset ${formatETA(a.minutesToReset5h)}`;
     document.getElementById('stat-5h-eta15').textContent = formatETA(a.eta15);
@@ -175,7 +190,7 @@ function renderClaudeStats(a) {
   if (l.u7d !== null) {
     const fill7d = document.getElementById('stat-7d-fill');
     fill7d.style.width  = `${Math.min(l.u7d, 100)}%`;
-    fill7d.style.background = l.u7d >= 100 ? '#ef4444' : '#22c55e';
+    fill7d.style.background = barColorFromUiState(uiState);
     document.getElementById('stat-7d-pct').textContent   = `${l.u7d.toFixed(1)}%`;
     document.getElementById('stat-7d-reset').textContent = `reset ${formatETA(a.minutesToReset7d)}`;
   }
@@ -200,24 +215,27 @@ function renderLovablePanel(a) {
   const todayLegend  = document.getElementById('lv-today-legend');
   const todayNeedle  = document.getElementById('lv-speedo-needle');
   const todayVal     = document.getElementById('lv-speedo-value');
+  const uiState = a.uiState || 'loading';
 
-  if (a.todayPace !== null) {
+  if (uiState !== 'loading' && a.todayPace !== null) {
     const angle = -90 + (Math.min(Math.max(a.todayPace, 0), 200) / 200) * 180;
     todayNeedle.style.transform = `rotate(${angle}deg)`;
     todayVal.textContent = Math.round(a.todayPace);
 
     todayLegend.className = 'speedo-legend';
-    if (a.todayPaceStatus === 'red') {
+    const tone = legendToneFromUiState(uiState);
+    if (tone) todayLegend.classList.add(tone);
+
+    if (uiState === 'locked_monthly') {
+      todayLegend.textContent = `Limite mensal esgotado · reset ${formatETA(a.minutesToMonthlyReset)}`;
+    } else if (uiState === 'critical') {
       todayLegend.textContent = `Redline · esgota ${formatETA(a.etaDailyExhaust)} · reset ${formatETA(a.minutesToDailyReset)}`;
-      todayLegend.classList.add('warn');
-    } else if (a.todayPaceStatus === 'yellow') {
+    } else if (uiState === 'attention') {
       todayLegend.textContent = `Atenção · esgota ${formatETA(a.etaDailyExhaust)}`;
-    } else if (a.todayPaceStatus === 'blue') {
+    } else if (uiState === 'idle') {
       todayLegend.textContent = `Créditos sobrando · reset ${formatETA(a.minutesToDailyReset)}`;
-      todayLegend.classList.add('ok');
     } else {
       todayLegend.textContent = `Pace diário saudável · reset ${formatETA(a.minutesToDailyReset)}`;
-      todayLegend.classList.add('ok');
     }
   } else {
     todayVal.textContent = '—';
@@ -245,6 +263,7 @@ function renderLovablePanel(a) {
 
   if (a.monthlyPct !== null) {
     monthFill.style.width = `${Math.min(a.monthlyPct, 100)}%`;
+    monthFill.style.background = barColorFromUiState(uiState);
     monthPct.textContent  = `${a.monthlyPct.toFixed(1)}%`;
     monthSub.textContent  = `reset ${formatETA(a.minutesToMonthlyReset)}`;
     monthBurn.textContent = a.monthlyBurn !== null

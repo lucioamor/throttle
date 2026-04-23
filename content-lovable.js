@@ -298,19 +298,21 @@
       overallStatus
     } = analysis;
 
+    const uiState = analysis.uiState || 'loading';
+
     const capsule = shadow.getElementById('capsule');
-    capsule.dataset.status = overallStatus;
+    capsule.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
 
     // TODAY PACE
     const needle   = shadow.getElementById('needle');
     const paceEl   = shadow.getElementById('today-pace-val');
     const trendEl  = shadow.getElementById('today-trend');
 
-    if (todayPace !== null) {
+    if (uiState !== 'loading' && todayPace !== null) {
       const angle = -90 + (Math.min(Math.max(todayPace, 0), 200) / 200) * 180;
       needle.style.transform = `rotate(${angle}deg)`;
       paceEl.textContent = Math.round(todayPace);
-      paceEl.dataset.status = todayPaceStatus;
+      paceEl.dataset.status = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
     } else {
       paceEl.textContent = '—';
       paceEl.dataset.status = 'green';
@@ -325,7 +327,7 @@
     dotsEl.innerHTML = '';
     const total = dailyTotal || 5;
     const used  = total - (dailyRemaining ?? 0);
-    const warn  = todayPaceStatus === 'red';
+    const warn  = uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical';
     for (let i = 0; i < total; i++) {
       const dot = document.createElement('div');
       dot.className = i < used ? 'dot used' : 'dot avail';
@@ -341,8 +343,8 @@
     const monthPctEl = shadow.getElementById('monthly-pct');
     if (monthlyPct !== null) {
       let color = '#22c55e';
-      if (monthlyPct >= 85) color = '#ef4444';
-      else if (monthlyPct >= 70) color = '#eab308';
+      if (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') color = '#ef4444';
+      else if (uiState === 'attention') color = '#eab308';
       monthFill.style.width = `${Math.min(monthlyPct, 100)}%`;
       monthFill.style.background = color;
       monthPctEl.textContent = `${monthlyPct.toFixed(0)}%`;
@@ -355,17 +357,19 @@
     const badgeCloud = shadow.getElementById('badge-cloud');
     const badgeAi    = shadow.getElementById('badge-ai');
 
-    if (cloudStatus === 'yellow' || cloudStatus === 'red') {
+    const uiRisk = (uiState === 'locked_monthly' || uiState === 'locked_5h' || uiState === 'critical') ? 'red' : (uiState === 'attention' ? 'yellow' : null);
+
+    if (uiRisk && cloudPct !== null) {
       badgeCloud.classList.remove('hidden');
-      badgeCloud.dataset.risk = cloudStatus;
+      badgeCloud.dataset.risk = uiRisk;
       badgeCloud.title = `Cloud: ${cloudPct?.toFixed(0)}%`;
     } else {
       badgeCloud.classList.add('hidden');
     }
 
-    if (aiStatus === 'yellow' || aiStatus === 'red') {
+    if (uiRisk && aiPct !== null) {
       badgeAi.classList.remove('hidden');
-      badgeAi.dataset.risk = aiStatus;
+      badgeAi.dataset.risk = uiRisk;
       badgeAi.title = `AI: ${aiPct?.toFixed(0)}%`;
     } else {
       badgeAi.classList.add('hidden');

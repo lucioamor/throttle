@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeRate, analyze } from '../lib/predictor.js';
+import { computeRate, analyze, resolveUiState } from '../lib/predictor.js';
 
 test('computeRate returns null when values are not finite', () => {
   const now = Date.now();
@@ -62,4 +62,74 @@ test('analyze does not report zero pace when 5h window is exhausted', () => {
   assert.equal(result.status, 'red');
   assert.equal(result.rpmBlend, 100);
   assert.equal(result.eta15, 0);
+});
+
+test('resolveUiState returns locked_monthly when monthly credits are exhausted', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 0,
+    window5hExhausted: false,
+    hasPaceData: true,
+    recentUsagePct: 50
+  });
+  assert.equal(uiState, 'locked_monthly');
+});
+
+test('resolveUiState returns locked_5h when 5h window is exhausted', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 10,
+    window5hExhausted: true,
+    hasPaceData: true,
+    recentUsagePct: 50
+  });
+  assert.equal(uiState, 'locked_5h');
+});
+
+test('resolveUiState returns loading when pace data is unavailable', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 10,
+    window5hExhausted: false,
+    hasPaceData: false,
+    recentUsagePct: null
+  });
+  assert.equal(uiState, 'loading');
+});
+
+test('resolveUiState classifies idle pace', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 10,
+    window5hExhausted: false,
+    hasPaceData: true,
+    recentUsagePct: 1.5
+  });
+  assert.equal(uiState, 'idle');
+});
+
+test('resolveUiState classifies healthy pace', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 10,
+    window5hExhausted: false,
+    hasPaceData: true,
+    recentUsagePct: 20
+  });
+  assert.equal(uiState, 'healthy');
+});
+
+test('resolveUiState classifies attention pace', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 10,
+    window5hExhausted: false,
+    hasPaceData: true,
+    recentUsagePct: 60
+  });
+  assert.equal(uiState, 'attention');
+});
+
+test('resolveUiState classifies critical pace', () => {
+  const uiState = resolveUiState({
+    monthlyCreditsRemaining: 10,
+    window5hExhausted: false,
+    hasPaceData: true,
+    recentUsagePct: 90
+  });
+  assert.equal(uiState, 'critical');
 });
