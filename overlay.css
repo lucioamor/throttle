@@ -1,0 +1,4 @@
+/* Throttle — all visual styling lives inside the Shadow DOM in content.js.
+   This file exists only to satisfy the manifest's content_scripts.css
+   declaration and to provide a safety net if the host ever blocks shadow DOM.
+*/
