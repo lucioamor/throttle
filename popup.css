@@ -169,6 +169,10 @@ html, body {
 .speedo-legend.warn { color: #fca5a5; font-weight: 600; }
 .speedo-legend.ok { color: #86efac; }
 
+.speedo.speedo-idle .speedo-arc {
+  opacity: 0.35 !important;
+}
+
 /* ----- Stats ----- */
 .stats {
   display: flex;

@@ -48,6 +48,39 @@ test('analyze handles finite utilization and produces ready state', () => {
   assert.ok(Number.isFinite(result.rate60));
 });
 
+test('analyze exposes loading uiState message for mini-badge', () => {
+  const now = Date.now();
+  const snaps = [
+    {
+      t: now,
+      u5h: 10,
+      u7d: 13,
+      reset5h: new Date(now + 4 * 60 * 60 * 1000).toISOString(),
+      reset7d: new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  ];
+
+  const result = analyze(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.uiState, 'loading');
+  assert.equal(result.operationalMsg, '...');
+});
+
+test('analyze maps idle uiState to neutral mini-badge copy', () => {
+  const now = Date.now();
+  const reset5h = new Date(now + 4 * 60 * 60 * 1000).toISOString();
+  const reset7d = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString();
+  const snaps = [
+    { t: now - 60 * 60 * 1000, u5h: 0.0, u7d: 12.8, reset5h, reset7d },
+    { t: now, u5h: 0.3, u7d: 13.0, reset5h, reset7d }
+  ];
+
+  const result = analyze(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.uiState, 'idle');
+  assert.equal(result.operationalMsg, '0% · tranquilo');
+});
+
 test('analyze does not report zero pace when 5h window is exhausted', () => {
   const now = Date.now();
   const reset5h = new Date(now + 2 * 60 * 60 * 1000).toISOString();
@@ -99,6 +132,41 @@ test('analyze ignores stale monthly_exhausted flag when extra utilization is low
   assert.equal(result.lockOverlay.active, false);
 });
 
+test('analyze does not lock monthly when extra limit is zero', () => {
+  const now = Date.now();
+  const reset5h = new Date(now + 2 * 60 * 60 * 1000).toISOString();
+  const reset7d = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString();
+  const snaps = [
+    {
+      t: now - 60 * 1000,
+      u5h: 40,
+      u7d: 12,
+      reset5h,
+      reset7d,
+      extra_used: 0,
+      extra_limit: 0,
+      extra_util: null,
+      monthly_exhausted: false
+    },
+    {
+      t: now,
+      u5h: 42,
+      u7d: 13,
+      reset5h,
+      reset7d,
+      extra_used: 0,
+      extra_limit: 0,
+      extra_util: null,
+      monthly_exhausted: false
+    }
+  ];
+
+  const result = analyze(snaps);
+  assert.equal(result.ready, true);
+  assert.notEqual(result.uiState, 'locked_monthly');
+  assert.equal(result.lockOverlay.active, false);
+});
+
 test('analyzeLovable exposes monthly lock overlay when cycle is exhausted', () => {
   const now = Date.now();
   const snaps = [
@@ -141,6 +209,75 @@ test('analyzeLovable exposes monthly lock overlay when cycle is exhausted', () =
   assert.equal(result.lockOverlay.kind, 'monthly');
   assert.equal(result.lockOverlay.icon, '🔒');
   assert.ok(result.lockOverlay.detail.includes('/'));
+});
+
+test('analyzeLovable exposes loading message for mini-badge', () => {
+  const now = Date.now();
+  const snaps = [
+    {
+      t: now,
+      daily_used: 1,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 10,
+      monthly_total: 100,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      cloud_used: 1,
+      cloud_total: 10,
+      ai_used: 1,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    }
+  ];
+
+  const result = analyzeLovable(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.uiState, 'loading');
+  assert.equal(result.operationalMsg, '...');
+});
+
+test('analyzeLovable maps idle uiState to neutral mini-badge copy', () => {
+  const now = Date.now();
+  const dailyResetAt = new Date(now + 10 * 60 * 60 * 1000).toISOString();
+  const monthlyResetAt = new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const snaps = [
+    {
+      t: now - 6 * 60 * 60 * 1000,
+      daily_used: 1.0,
+      daily_total: 5,
+      daily_reset_at: dailyResetAt,
+      monthly_used: 10,
+      monthly_total: 100,
+      monthly_reset_at: monthlyResetAt,
+      cloud_used: 1,
+      cloud_total: 10,
+      ai_used: 1,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    },
+    {
+      t: now,
+      daily_used: 1.01,
+      daily_total: 5,
+      daily_reset_at: dailyResetAt,
+      monthly_used: 10.1,
+      monthly_total: 100,
+      monthly_reset_at: monthlyResetAt,
+      cloud_used: 1.5,
+      cloud_total: 10,
+      ai_used: 1.5,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    }
+  ];
+
+  const result = analyzeLovable(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.uiState, 'idle');
+  assert.equal(result.operationalMsg, '0% · tranquilo');
 });
 
 test('resolveUiState returns locked_monthly when monthly credits are exhausted', () => {

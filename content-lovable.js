@@ -336,7 +336,7 @@
       todayPace, todayPaceStatus, todayTrend, etaDailyExhaust,
       monthlyPct, monthlyBurn, monthlyBurnStatus,
       cloudPct, cloudStatus, aiPct, aiStatus,
-      overallStatus
+      overallStatus, operationalMsg
     } = analysis;
 
     const uiState = analysis.uiState || 'loading';
@@ -420,17 +420,9 @@
       badgeAi.classList.add('hidden');
     }
 
-    // Hover expand: mensagem contextual
+    // Hover expand: mensagem contextual centralizada no analysis
     const extraEl = shadow.getElementById('extra-msg');
-    let msg = '';
-    if (minutesToDailyReset !== null) {
-      msg = `reset diário ${fmtMin(minutesToDailyReset)}`;
-    }
-    if (monthlyBurn !== null && monthlyBurnStatus !== 'green') {
-      msg += msg ? ' · ' : '';
-      msg += monthlyBurnStatus === 'red' ? 'ciclo em risco' : 'burn elevado';
-    }
-    extraEl.textContent = msg;
+    extraEl.textContent = operationalMsg || '';
 
     const lockTitle = shadow.getElementById('lock-title');
     const lockSub = shadow.getElementById('lock-sub');

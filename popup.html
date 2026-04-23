@@ -111,10 +111,10 @@
       <section class="speedo">
         <svg id="speedo-svg" viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet">
           <path d="M 20 140 A 100 100 0 0 1 220 140" fill="none" stroke="#1f2937" stroke-width="14" stroke-linecap="round"/>
-          <path d="M 20 140 A 100 100 0 0 1 80 52"   fill="none" stroke="#1e40af" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path d="M 80 52 A 100 100 0 0 1 140 40"   fill="none" stroke="#16a34a" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path d="M 140 40 A 100 100 0 0 1 185 62"  fill="none" stroke="#ca8a04" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path d="M 185 62 A 100 100 0 0 1 220 140" fill="none" stroke="#dc2626" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 20 140 A 100 100 0 0 1 80 52"   fill="none" stroke="#1e40af" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 80 52 A 100 100 0 0 1 140 40"   fill="none" stroke="#16a34a" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 140 40 A 100 100 0 0 1 185 62"  fill="none" stroke="#ca8a04" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 185 62 A 100 100 0 0 1 220 140" fill="none" stroke="#dc2626" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
           <g id="speedo-ticks" stroke="#4b5563" stroke-width="1.5"></g>
           <g id="speedo-tick-labels" fill="#9ca3af" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle"></g>
           <line id="speedo-needle" x1="120" y1="140" x2="120" y2="55"
@@ -192,12 +192,12 @@
 
       <!-- TODAY PACE speedo -->
       <section class="speedo">
-        <svg viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:260px;height:auto;">
+        <svg id="lv-speedo-svg" viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:260px;height:auto;">
           <path d="M 20 140 A 100 100 0 0 1 220 140" fill="none" stroke="#1f2937"  stroke-width="14" stroke-linecap="round"/>
-          <path d="M 20 140 A 100 100 0 0 1 80 52"   fill="none" stroke="#1e40af"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path d="M 80 52 A 100 100 0 0 1 140 40"   fill="none" stroke="#16a34a"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path d="M 140 40 A 100 100 0 0 1 185 62"  fill="none" stroke="#ca8a04"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path d="M 185 62 A 100 100 0 0 1 220 140" fill="none" stroke="#dc2626"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 20 140 A 100 100 0 0 1 80 52"   fill="none" stroke="#1e40af"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 80 52 A 100 100 0 0 1 140 40"   fill="none" stroke="#16a34a"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 140 40 A 100 100 0 0 1 185 62"  fill="none" stroke="#ca8a04"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" d="M 185 62 A 100 100 0 0 1 220 140" fill="none" stroke="#dc2626"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
           <line id="lv-speedo-needle" x1="120" y1="140" x2="120" y2="55"
             stroke="#f59e0b" stroke-width="3" stroke-linecap="round"
             style="transform-origin:120px 140px; transition:transform 0.9s cubic-bezier(0.34,1.56,0.64,1);"/>

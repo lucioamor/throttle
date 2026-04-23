@@ -146,7 +146,7 @@ function isUiStateCritical(uiState) {
 
 function legendToneFromUiState(uiState, lockActive) {
   if (lockActive || isUiStateCritical(uiState)) return 'warn';
-  if (uiState === 'idle' || uiState === 'healthy') return 'ok';
+  if (uiState === 'healthy') return 'ok';
   return '';
 }
 
@@ -154,6 +154,28 @@ function barColorFromUiState(uiState, lockActive) {
   if (lockActive || isUiStateCritical(uiState)) return '#ef4444';
   if (uiState === 'attention') return '#eab308';
   return '#22c55e';
+}
+
+function setNeedleToZero(needle) {
+  if (!needle) return;
+  needle.style.transform = 'rotate(-90deg)';
+}
+
+function applySpeedoUiState(needle, uiState) {
+  const speedo = needle?.closest('.speedo');
+  if (speedo) {
+    speedo.classList.toggle('speedo-idle', uiState === 'idle');
+  }
+  if (!needle) return;
+  if (uiState === 'loading') {
+    setNeedleToZero(needle);
+    needle.style.opacity = '0';
+    return;
+  }
+  needle.style.opacity = '1';
+  if (uiState === 'idle') {
+    setNeedleToZero(needle);
+  }
 }
 
 function renderPanelLockOverlay(panel, lockOverlay) {
@@ -182,8 +204,28 @@ function renderClaudeSpeedo(a) {
   const uiState = a.uiState || 'loading';
   const lockOverlay = a.lockOverlay || { active: false };
 
-  if (uiState === 'loading') { value.textContent = '—'; legend.textContent = 'Aguardando dados de pace'; return; }
-  if (pace === null) { value.textContent = '—'; legend.textContent = 'Aguardando dados de pace'; return; }
+  applySpeedoUiState(needle, uiState);
+
+  if (uiState === 'loading') {
+    value.textContent = '—';
+    legend.className = 'speedo-legend';
+    legend.textContent = 'Coletando dados';
+    return;
+  }
+
+  if (uiState === 'idle') {
+    value.textContent = '0';
+    legend.className = 'speedo-legend';
+    legend.textContent = 'Sem consumo recente';
+    return;
+  }
+
+  if (pace === null) {
+    value.textContent = '—';
+    legend.className = 'speedo-legend';
+    legend.textContent = 'Coletando dados';
+    return;
+  }
 
   const angle = -90 + (Math.min(Math.max(pace, 0), 200) / 200) * 180;
   needle.style.transform = `rotate(${angle}deg)`;
@@ -198,8 +240,8 @@ function renderClaudeSpeedo(a) {
     legend.textContent = `Redline · zera ${formatETA(a.etaBlend)} · reset ${formatETA(a.minutesToReset5h)}`;
   } else if (uiState === 'attention' || pace > 105) {
     legend.textContent = `Acima do pace · ETA ${formatETA(a.etaBlend)}`;
-  } else if (uiState === 'idle' || pace < 50) {
-    legend.textContent = `Throttle folgado · reset ${formatETA(a.minutesToReset5h)}`;
+  } else if (pace < 50) {
+    legend.textContent = `Pace baixo · reset ${formatETA(a.minutesToReset5h)}`;
   } else {
     legend.textContent = `Pace saudável · reset ${formatETA(a.minutesToReset5h)}`;
   }
@@ -209,21 +251,46 @@ function renderClaudeStats(a) {
   const l = a.latest;
   const uiState = a.uiState || 'loading';
   const lockOverlay = a.lockOverlay || { active: false };
+  const fill5h = document.getElementById('stat-5h-fill');
+  const pct5h = document.getElementById('stat-5h-pct');
+  const reset5h = document.getElementById('stat-5h-reset');
+  const eta15 = document.getElementById('stat-5h-eta15');
+  const eta60 = document.getElementById('stat-5h-eta60');
   const stat5hWrap = document.getElementById('stat-5h-wrap');
   if (stat5hWrap) stat5hWrap.classList.toggle('stat-disabled', lockOverlay.kind === 'monthly');
 
-  if (l.u5h !== null) {
-    const fill5h = document.getElementById('stat-5h-fill');
+  if (uiState === 'loading') {
+    fill5h.style.width = '100%';
+    fill5h.style.background = '#52525b';
+    pct5h.textContent = '—';
+    reset5h.textContent = 'coletando...';
+    eta15.textContent = '—';
+    eta60.textContent = '—';
+  } else if (uiState === 'idle') {
+    fill5h.style.width = '0%';
+    fill5h.style.background = barColorFromUiState(uiState, lockOverlay.active);
+    pct5h.textContent = '0%';
+    reset5h.textContent = `reset ${formatETA(a.minutesToReset5h)}`;
+    eta15.textContent = '—';
+    eta60.textContent = '—';
+  } else if (l.u5h !== null) {
     fill5h.style.width  = `${Math.min(l.u5h, 100)}%`;
     if (lockOverlay.kind === 'monthly') {
       fill5h.style.background = '#52525b';
     } else {
       fill5h.style.background = barColorFromUiState(uiState, lockOverlay.active);
     }
-    document.getElementById('stat-5h-pct').textContent   = `${l.u5h.toFixed(1)}%`;
-    document.getElementById('stat-5h-reset').textContent = `reset ${formatETA(a.minutesToReset5h)}`;
-    document.getElementById('stat-5h-eta15').textContent = formatETA(a.eta15);
-    document.getElementById('stat-5h-eta60').textContent = formatETA(a.eta60);
+    pct5h.textContent = `${l.u5h.toFixed(1)}%`;
+    reset5h.textContent = `reset ${formatETA(a.minutesToReset5h)}`;
+    eta15.textContent = formatETA(a.eta15);
+    eta60.textContent = formatETA(a.eta60);
+  } else {
+    fill5h.style.width = '0%';
+    fill5h.style.background = '#52525b';
+    pct5h.textContent = '—';
+    reset5h.textContent = 'reset —';
+    eta15.textContent = '—';
+    eta60.textContent = '—';
   }
 
   if (l.u7d !== null) {
@@ -259,7 +326,17 @@ function renderLovablePanel(a) {
   const uiState = a.uiState || 'loading';
   const lockOverlay = a.lockOverlay || { active: false };
 
-  if (uiState !== 'loading' && a.todayPace !== null) {
+  applySpeedoUiState(todayNeedle, uiState);
+
+  if (uiState === 'loading') {
+    todayVal.textContent = '—';
+    todayLegend.className = 'speedo-legend';
+    todayLegend.textContent = 'Coletando dados';
+  } else if (uiState === 'idle') {
+    todayVal.textContent = '0';
+    todayLegend.className = 'speedo-legend';
+    todayLegend.textContent = 'Sem consumo recente';
+  } else if (a.todayPace !== null) {
     const angle = -90 + (Math.min(Math.max(a.todayPace, 0), 200) / 200) * 180;
     todayNeedle.style.transform = `rotate(${angle}deg)`;
     todayVal.textContent = Math.round(a.todayPace);
@@ -274,14 +351,13 @@ function renderLovablePanel(a) {
       todayLegend.textContent = `Redline · esgota ${formatETA(a.etaDailyExhaust)} · reset ${formatETA(a.minutesToDailyReset)}`;
     } else if (uiState === 'attention') {
       todayLegend.textContent = `Atenção · esgota ${formatETA(a.etaDailyExhaust)}`;
-    } else if (uiState === 'idle') {
-      todayLegend.textContent = `Créditos sobrando · reset ${formatETA(a.minutesToDailyReset)}`;
     } else {
       todayLegend.textContent = `Pace diário saudável · reset ${formatETA(a.minutesToDailyReset)}`;
     }
   } else {
     todayVal.textContent = '—';
-    todayLegend.textContent = 'Aguardando dados de TODAY PACE';
+    todayLegend.className = 'speedo-legend';
+    todayLegend.textContent = 'Coletando dados';
   }
 
   // Dots de créditos diários
