@@ -26,36 +26,32 @@
   function normalizePayload(url, body) {
     if (!body || typeof body !== 'object') return null;
 
-    // Tenta extrair dados de diferentes endpoints conhecidos
     const wsId = extractWsId(url) || body.id || body.workspace_id || body.ws_id;
     if (!wsId || !WS_ID_RE.test(wsId)) return null;
 
-    // Endpoint de workspace/créditos — estrutura observada na extensão atual
     const snap = {
-      ws_id:  wsId,
+      ws_id:   wsId,
       ws_name: body.name || body.title || body.workspace_name || null,
 
-    // Créditos diários gratuitos (free credits / daily allowance)
-      daily_used:     body.daily_credits_used     ?? body.free_credits_used     ?? null,
-      daily_total:    body.daily_credits_total    ?? body.free_credits_total    ?? 5,
-      daily_reset_at: body.daily_credits_reset_at ?? body.free_credits_reset_at ?? null,
+      // Créditos diários — campo real da API é "limit", não "total"
+      daily_used:     body.daily_credits_used  ?? null,
+      daily_total:    body.daily_credits_limit ?? body.daily_credits_total ?? 5,
+      daily_reset_at: body.daily_credits_reset_at ?? null,
 
-    // Créditos mensais do workspace (paid quota / monthly burn)
-      monthly_used:     body.credits_used     ?? body.monthly_credits_used     ?? null,
-      monthly_total:    body.credits_limit    ?? body.monthly_credits_total    ?? null,
-      monthly_reset_at: body.credits_reset_at ?? body.monthly_credits_reset_at ?? null,
+      // Créditos do billing period — campos reais da API
+      monthly_used:     body.billing_period_credits_used ?? body.total_credits_used_in_billing_period ?? body.credits_used ?? null,
+      monthly_total:    body.billing_period_credits_limit ?? body.credits_limit ?? null,
+      monthly_reset_at: body.billing_period_end_date ?? body.credits_reset_at ?? null,
 
-      // Lovable Cloud (passivo)
-      cloud_used:  body.cloud_credits_used  ?? body.lovable_cloud_used  ?? null,
-      cloud_total: body.cloud_credits_limit ?? body.lovable_cloud_total ?? null,
-
-      // Lovable AI (passivo)
-      ai_used:  body.ai_credits_used  ?? body.lovable_ai_used  ?? null,
-      ai_total: body.ai_credits_limit ?? body.lovable_ai_total ?? null,
+      // Cloud/AI — endpoint /lovable-cloud-monthly-usage: { cloud_usage: {used,free}, ai_gateway_usage: {used,free} }
+      cloud_used:  body.cloud_usage?.used  ?? body.cloud_credits_used  ?? null,
+      cloud_total: body.cloud_usage?.free  ?? body.cloud_credits_limit ?? null,
+      ai_used:     body.ai_gateway_usage?.used  ?? body.ai_credits_used  ?? null,
+      ai_total:    body.ai_gateway_usage?.free  ?? body.ai_credits_limit ?? null,
     };
 
-    // Descarta se não tem dados úteis
-    if (snap.daily_used === null && snap.monthly_used === null) return null;
+    // Descarta se nenhum campo de dados existe (nem diário, nem mensal, nem cloud/ai)
+    if (snap.daily_used === null && snap.monthly_used === null && snap.cloud_used === null && snap.ai_used === null) return null;
     return snap;
   }
 
