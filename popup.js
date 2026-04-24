@@ -1,4 +1,4 @@
-// popup.js â€” Throttle v2
+// popup.js — Throttle v2
 
 import {
   getAccountsByProvider,
@@ -80,8 +80,8 @@ async function populateAccounts() {
   if (entries.length === 0) {
     const opt = document.createElement('option');
     opt.textContent = activeProvider === 'claude'
-      ? 'nenhuma org detectada â€” abra claude.ai'
-      : 'nenhum workspace â€” abra lovable.dev';
+      ? 'nenhuma org detectada — abra claude.ai'
+      : 'nenhum workspace — abra lovable.dev';
     opt.disabled = true;
     select.appendChild(opt);
     select.disabled = true;
@@ -100,7 +100,7 @@ async function populateAccounts() {
     opt.value = acc.providerId;
     const baseLabel = acc.label || acc.providerId;
     const shouldDisambiguate = (labelCount.get(baseLabel) || 0) > 1;
-    const suffix = shouldDisambiguate ? ` Â· ${shortProviderSuffix(acc.providerId)}` : '';
+    const suffix = shouldDisambiguate ? ` · ${shortProviderSuffix(acc.providerId)}` : '';
     opt.textContent = baseLabel + suffix + (acc.plan && acc.plan !== 'unknown' ? ` [${acc.plan}]` : '');
     select.appendChild(opt);
   }
@@ -120,6 +120,41 @@ function shortProviderSuffix(providerId) {
   const idx = providerId.indexOf(':');
   const raw = idx >= 0 ? providerId.slice(idx + 1) : providerId;
   return raw.slice(0, 8);
+}
+
+function getPopupCreditsRemaining(analysis) {
+  if (!analysis || typeof analysis !== 'object') return null;
+
+  if (analysis.provider === 'claude') {
+    const u5h = Number.isFinite(analysis?.latest?.u5h) ? analysis.latest.u5h : null;
+    if (u5h === null) return null;
+    return 100 - u5h;
+  }
+
+  if (analysis.provider === 'lovable') {
+    return Number.isFinite(analysis?.monthlyRemaining) ? analysis.monthlyRemaining : null;
+  }
+
+  return null;
+}
+
+function resolvePopupLockOverlay(analysis) {
+  const creditsRemaining = getPopupCreditsRemaining(analysis);
+  if (creditsRemaining === null || creditsRemaining > 0) {
+    return { active: false, kind: null, icon: '', title: '', detail: '' };
+  }
+
+  const base = analysis?.lockOverlay && typeof analysis.lockOverlay === 'object'
+    ? analysis.lockOverlay
+    : {};
+
+  return {
+    active: true,
+    kind: base.kind || 'monthly',
+    icon: base.icon || '🔒',
+    title: base.title || 'Créditos esgotados',
+    detail: base.detail || 'saldo <= 0'
+  };
 }
 
 // -------- Render dispatcher --------
@@ -147,11 +182,12 @@ async function render() {
       setFooterState(null);
       return;
     }
-    renderClaudeSpeedo(analysis);
-    renderClaudeStats(analysis);
+    const popupAnalysis = { ...analysis, lockOverlay: resolvePopupLockOverlay(analysis) };
+    renderClaudeSpeedo(popupAnalysis);
+    renderClaudeStats(popupAnalysis);
     renderHeatmap(snapshots);
-    renderFooter(analysis);
-    renderPanelLockOverlay('claude', analysis.lockOverlay);
+    renderFooter(popupAnalysis);
+    renderPanelLockOverlay('claude', popupAnalysis.lockOverlay);
     renderPanelLockOverlay('lovable', null);
   } else {
     const analysis = analyzeLovable(snapshots);
@@ -161,9 +197,10 @@ async function render() {
       setFooterState(null);
       return;
     }
-    renderLovablePanel(analysis);
-    renderFooter(analysis);
-    renderPanelLockOverlay('lovable', analysis.lockOverlay);
+    const popupAnalysis = { ...analysis, lockOverlay: resolvePopupLockOverlay(analysis) };
+    renderLovablePanel(popupAnalysis);
+    renderFooter(popupAnalysis);
+    renderPanelLockOverlay('lovable', popupAnalysis.lockOverlay);
     renderPanelLockOverlay('claude', null);
   }
 }
@@ -213,8 +250,8 @@ function setFooterState(analysis) {
 
   if (!analysis?.latest?.t) {
     footerState = null;
-    if (lastUpdate) lastUpdate.textContent = 'â€”';
-    if (snapCount) snapCount.textContent = 'â€” snapshots';
+    if (lastUpdate) lastUpdate.textContent = '—';
+    if (snapCount) snapCount.textContent = '— snapshots';
     return;
   }
 
@@ -249,7 +286,7 @@ function startFooterClock() {
 }
 
 function formatRelativeAge(ms) {
-  if (!Number.isFinite(ms)) return 'â€”';
+  if (!Number.isFinite(ms)) return '—';
   if (ms < 0) return '0s ago';
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s ago`;
@@ -314,6 +351,7 @@ function renderPanelLockOverlay(panel, lockOverlay) {
 
   const active = !!lockOverlay?.active;
   root.hidden = !active;
+  root.style.display = active ? 'flex' : 'none';
   if (!active) return;
 
   const title = document.getElementById(`panel-${panel}-lock-title`);
@@ -321,7 +359,7 @@ function renderPanelLockOverlay(panel, lockOverlay) {
   const icon = document.getElementById(`panel-${panel}-lock-icon`);
   if (icon) icon.textContent = lockOverlay.icon || 'ðŸ”’';
   if (title) title.textContent = lockOverlay.title || 'Limite esgotado';
-  if (sub) sub.textContent = lockOverlay.detail || 'reset â€”';
+  if (sub) sub.textContent = lockOverlay.detail || 'reset —';
 }
 
 // -------- Claude panel --------
@@ -337,7 +375,7 @@ function renderClaudeSpeedo(a) {
   applySpeedoUiState(needle, uiState);
 
   if (uiState === 'loading') {
-    value.textContent = 'â€”';
+    value.textContent = '—';
     legend.className = 'speedo-legend';
     legend.textContent = 'Coletando dados';
     return;
@@ -351,7 +389,7 @@ function renderClaudeSpeedo(a) {
   }
 
   if (pace === null) {
-    value.textContent = 'â€”';
+    value.textContent = '—';
     legend.className = 'speedo-legend';
     legend.textContent = 'Coletando dados';
     return;
@@ -365,15 +403,15 @@ function renderClaudeSpeedo(a) {
   const tone = legendToneFromUiState(uiState, lockOverlay.active);
   if (tone) legend.classList.add(tone);
   if (lockOverlay.active) {
-    legend.textContent = `${lockOverlay.title} Â· ${lockOverlay.detail}`;
+    legend.textContent = `${lockOverlay.title} · ${lockOverlay.detail}`;
   } else if (uiState === 'critical' || pace > 130) {
-    legend.textContent = `Redline Â· zera ${formatETA(a.etaBlend)} Â· reset ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Redline · zera ${formatETA(a.etaBlend)} · reset ${formatETA(a.minutesToReset5h)}`;
   } else if (uiState === 'attention' || pace > 105) {
-    legend.textContent = `Acima do pace Â· ETA ${formatETA(a.etaBlend)}`;
+    legend.textContent = `Acima do pace · ETA ${formatETA(a.etaBlend)}`;
   } else if (pace < 50) {
-    legend.textContent = `Pace baixo Â· reset ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Pace baixo · reset ${formatETA(a.minutesToReset5h)}`;
   } else {
-    legend.textContent = `Pace saudÃ¡vel Â· reset ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Pace saudável · reset ${formatETA(a.minutesToReset5h)}`;
   }
 }
 
@@ -392,17 +430,17 @@ function renderClaudeStats(a) {
   if (uiState === 'loading') {
     fill5h.style.width = '100%';
     fill5h.style.background = '#52525b';
-    pct5h.textContent = 'â€”';
+    pct5h.textContent = '—';
     reset5h.textContent = 'coletando...';
-    eta15.textContent = 'â€”';
-    eta60.textContent = 'â€”';
+    eta15.textContent = '—';
+    eta60.textContent = '—';
   } else if (uiState === 'idle') {
     fill5h.style.width = '0%';
     fill5h.style.background = colorForClaude5h(0, uiState, lockOverlay);
     pct5h.textContent = '0%';
     reset5h.textContent = `reset ${formatETA(a.minutesToReset5h)}`;
-    eta15.textContent = 'â€”';
-    eta60.textContent = 'â€”';
+    eta15.textContent = '—';
+    eta60.textContent = '—';
   } else if (l.u5h !== null) {
     fill5h.style.width  = `${Math.min(l.u5h, 100)}%`;
     fill5h.style.background = colorForClaude5h(l.u5h, uiState, lockOverlay);
@@ -413,10 +451,10 @@ function renderClaudeStats(a) {
   } else {
     fill5h.style.width = '0%';
     fill5h.style.background = '#52525b';
-    pct5h.textContent = 'â€”';
-    reset5h.textContent = 'reset â€”';
-    eta15.textContent = 'â€”';
-    eta60.textContent = 'â€”';
+    pct5h.textContent = '—';
+    reset5h.textContent = 'reset —';
+    eta15.textContent = '—';
+    eta60.textContent = '—';
   }
 
   if (l.u7d !== null) {
@@ -455,7 +493,7 @@ function renderLovablePanel(a) {
   applySpeedoUiState(todayNeedle, uiState);
 
   if (uiState === 'loading') {
-    todayVal.textContent = 'â€”';
+    todayVal.textContent = '—';
     todayLegend.className = 'speedo-legend';
     todayLegend.textContent = 'Coletando dados';
   } else if (uiState === 'idle') {
@@ -472,21 +510,21 @@ function renderLovablePanel(a) {
     if (tone) todayLegend.classList.add(tone);
 
     if (lockOverlay.active) {
-      todayLegend.textContent = `${lockOverlay.title} Â· ${lockOverlay.detail}`;
+      todayLegend.textContent = `${lockOverlay.title} · ${lockOverlay.detail}`;
     } else if (uiState === 'critical') {
-      todayLegend.textContent = `Redline Â· esgota ${formatETA(a.etaDailyExhaust)} Â· reset ${formatETA(a.minutesToDailyReset)}`;
+      todayLegend.textContent = `Redline · esgota ${formatETA(a.etaDailyExhaust)} · reset ${formatETA(a.minutesToDailyReset)}`;
     } else if (uiState === 'attention') {
-      todayLegend.textContent = `AtenÃ§Ã£o Â· esgota ${formatETA(a.etaDailyExhaust)}`;
+      todayLegend.textContent = `Atenção · esgota ${formatETA(a.etaDailyExhaust)}`;
     } else {
-      todayLegend.textContent = `Pace diÃ¡rio saudÃ¡vel Â· reset ${formatETA(a.minutesToDailyReset)}`;
+      todayLegend.textContent = `Pace diário saudável · reset ${formatETA(a.minutesToDailyReset)}`;
     }
   } else {
-    todayVal.textContent = 'â€”';
+    todayVal.textContent = '—';
     todayLegend.className = 'speedo-legend';
     todayLegend.textContent = 'Coletando dados';
   }
 
-  // Dots de crÃ©ditos diÃ¡rios
+  // Dots de créditos diários
   const dotsEl = document.getElementById('lv-daily-dots');
   dotsEl.innerHTML = '';
   const total = a.dailyTotal || 5;
@@ -497,7 +535,7 @@ function renderLovablePanel(a) {
     dotsEl.appendChild(dot);
   }
   document.getElementById('lv-daily-text').textContent =
-    `${a.dailyRemaining ?? 'â€”'} de ${total} restantes Â· reset ${formatETA(a.minutesToDailyReset)}`;
+    `${a.dailyRemaining ?? '—'} de ${total} restantes · reset ${formatETA(a.minutesToDailyReset)}`;
 
   // MONTHLY BURN
   const monthFill  = document.getElementById('lv-monthly-fill');
@@ -511,8 +549,8 @@ function renderLovablePanel(a) {
     monthPct.textContent  = `${a.monthlyPct.toFixed(1)}%`;
     monthSub.textContent  = `reset ${formatETA(a.minutesToMonthlyReset)}`;
     monthBurn.textContent = a.monthlyBurn !== null
-      ? `BURN ${Math.round(a.monthlyBurn)}${a.monthlyProjectedDays !== null ? ` Â· ${Math.round(a.monthlyProjectedDays)}d de saldo` : ''}`
-      : 'â€”';
+      ? `BURN ${Math.round(a.monthlyBurn)}${a.monthlyProjectedDays !== null ? ` · ${Math.round(a.monthlyProjectedDays)}d de saldo` : ''}`
+      : '—';
   }
 
   // Cloud / AI (passivos)
@@ -583,7 +621,7 @@ function renderHeatmap(snapshots) {
     el.classList.add(`scale-${tier}`);
     const hh = String(t.getHours()).padStart(2, '0');
     const dd = t.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    el.title = `${dd} ${hh}h â€” +${delta.toFixed(1)}%`;
+    el.title = `${dd} ${hh}h — +${delta.toFixed(1)}%`;
     heatmap.appendChild(el);
   }
 

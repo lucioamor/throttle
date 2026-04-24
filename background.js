@@ -34,6 +34,19 @@ const STALE_MS = 4 * 60 * 60 * 1000;
 const KNOWN_PROVIDERS = new Set(['claude', 'lovable']);
 const ACTION_ICON_SIZES = [16, 32];
 const ACTION_ICON_MAX_PACE = 200;
+const ACTION_ICON_GLYPHS = Object.freeze({
+  '0': ['111', '101', '101', '101', '111'],
+  '1': ['010', '110', '010', '010', '111'],
+  '2': ['111', '001', '111', '100', '111'],
+  '3': ['111', '001', '111', '001', '111'],
+  '4': ['101', '101', '111', '001', '001'],
+  '5': ['111', '100', '111', '001', '111'],
+  '6': ['111', '100', '111', '101', '111'],
+  '7': ['111', '001', '001', '001', '001'],
+  '8': ['111', '101', '111', '101', '111'],
+  '9': ['111', '101', '111', '001', '111'],
+  '-': ['000', '000', '111', '000', '000']
+});
 let lastActionIconKey = '';
 
 // -------- Lifecycle --------
@@ -622,12 +635,8 @@ function renderSpeedometerIcon(size, model) {
   const x2 = cx + Math.sin(angle) * needleLen;
   const y2 = cy - Math.cos(angle) * needleLen;
 
-  let needleColor = '#f59e0b';
-  if (uiState === 'loading') needleColor = '#94a3b8';
-  else if (uiState === 'idle') needleColor = '#60a5fa';
-  else if (highRisk) needleColor = '#ef4444';
-  else if (uiState === 'attention') needleColor = '#eab308';
-
+  // Keep needle color fixed to the same yellow from the pill speedometer.
+  const needleColor = '#f59e0b';
   ctx.strokeStyle = needleColor;
   ctx.lineWidth = Math.max(1.2, size * 0.11);
   ctx.beginPath();
@@ -640,10 +649,8 @@ function renderSpeedometerIcon(size, model) {
   ctx.arc(cx, cy, Math.max(1.1, size * 0.085), 0, Math.PI * 2);
   ctx.fill();
 
-  // Bottom band improves readability for 2-3 digits at 16x16.
-  ctx.fillStyle = 'rgba(2, 6, 23, 0.92)';
-  ctx.fillRect(0, digitsBandTop, size, digitsBandHeight);
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  // Keep full transparency; only draw a subtle separator line.
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, digitsBandTop + 0.5);
@@ -655,17 +662,14 @@ function renderSpeedometerIcon(size, model) {
   else if (highRisk) labelColor = '#fecaca';
   else if (uiState === 'attention') labelColor = '#fde68a';
 
-  const fontPx = Math.max(6, Math.floor(digitsBandHeight * 0.9));
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `700 ${fontPx}px "Segoe UI", Arial, sans-serif`;
-  const labelY = digitsBandTop + (digitsBandHeight / 2);
-
-  // Tiny shadow to keep readability over anti-aliasing at 16px.
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillText(paceLabel, Math.round(cx), Math.round(labelY) + 1);
-  ctx.fillStyle = labelColor;
-  ctx.fillText(paceLabel, Math.round(cx), Math.round(labelY));
+  drawActionIconDigits(ctx, {
+    text: paceLabel,
+    x: 0,
+    y: digitsBandTop,
+    width: size,
+    height: digitsBandHeight,
+    color: labelColor
+  });
 
   return ctx.getImageData(0, 0, size, size);
 }
@@ -693,6 +697,51 @@ function formatActionIconLabel(model, uiState) {
   if (uiState === 'loading') return '--';
   if (!Number.isFinite(model?.pace)) return '0';
   return String(Math.round(clamp(model.pace, 0, 999)));
+}
+
+function drawActionIconDigits(ctx, opts) {
+  const text = typeof opts?.text === 'string' && opts.text ? opts.text : '0';
+  const color = opts?.color || '#f8fafc';
+  const bounds = {
+    x: Number.isFinite(opts?.x) ? opts.x : 0,
+    y: Number.isFinite(opts?.y) ? opts.y : 0,
+    width: Number.isFinite(opts?.width) ? opts.width : 16,
+    height: Number.isFinite(opts?.height) ? opts.height : 6
+  };
+
+  const glyphs = [...text].map((ch) => ACTION_ICON_GLYPHS[ch] || ACTION_ICON_GLYPHS['-']);
+  const maxGlyphHeight = glyphs.reduce((acc, g) => Math.max(acc, g.length), 5);
+  const basePixel = Math.floor(bounds.height / maxGlyphHeight);
+  const pixel = Math.max(1, basePixel);
+  const glyphWidth = 3 * pixel;
+  const glyphHeight = 5 * pixel;
+  const gap = Math.max(1, Math.floor(pixel * 0.9));
+  const totalWidth = glyphs.length * glyphWidth + Math.max(0, glyphs.length - 1) * gap;
+  const startX = Math.round(bounds.x + (bounds.width - totalWidth) / 2);
+  const startY = Math.round(bounds.y + (bounds.height - glyphHeight) / 2);
+
+  for (let i = 0; i < glyphs.length; i++) {
+    const glyph = glyphs[i];
+    const gx = startX + i * (glyphWidth + gap);
+    drawActionIconGlyph(ctx, glyph, gx, startY, pixel, color);
+  }
+}
+
+function drawActionIconGlyph(ctx, glyph, x, y, pixel, color) {
+  if (!Array.isArray(glyph)) return;
+  for (let row = 0; row < glyph.length; row++) {
+    const rowBits = glyph[row];
+    if (typeof rowBits !== 'string') continue;
+    for (let col = 0; col < rowBits.length; col++) {
+      if (rowBits[col] !== '1') continue;
+      const px = x + col * pixel;
+      const py = y + row * pixel;
+      ctx.fillStyle = 'rgba(0,0,0,0.42)';
+      ctx.fillRect(px, py + 1, pixel, pixel);
+      ctx.fillStyle = color;
+      ctx.fillRect(px, py, pixel, pixel);
+    }
+  }
 }
 
 async function setDefaultActionIcon() {

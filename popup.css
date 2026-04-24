@@ -40,6 +40,10 @@ html, body {
   pointer-events: none;
 }
 
+.panel-lock-overlay[hidden] {
+  display: none !important;
+}
+
 .panel-lock-icon {
   font-size: 16px;
   line-height: 1;
