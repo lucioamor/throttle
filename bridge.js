@@ -3,12 +3,14 @@
 
 const TOKEN_ATTR = 'data-throttle-token';
 const ORG_ID_RE = /^[0-9a-f-]{8,128}$/i;
+let bridgeRuntimeInvalidated = false;
 
 ensureBridgeToken();
 
 window.addEventListener('message', (event) => {
   try {
     if (event.source !== window) return;
+    if (bridgeRuntimeInvalidated) return;
     if (!isExtensionContextAlive()) return;
     const msg = event.data;
     if (!isBridgeMessage(msg)) return;
@@ -23,8 +25,10 @@ window.addEventListener('message', (event) => {
     }
 
     if (msg.type === 'ORG_SEEN') {
-      // ORG_SEEN is consumed directly by content.js.
-      // Background org discovery already happens via webRequest and usage interception.
+      safeSendMessage({
+        type: 'ORG_SEEN',
+        orgId: msg.orgId
+      });
       return;
     }
 
@@ -51,13 +55,19 @@ function isExtensionContextAlive() {
 }
 
 function safeSendMessage(message) {
+  if (bridgeRuntimeInvalidated) return;
   if (!isExtensionContextAlive()) return;
   try {
-    const maybePromise = chrome.runtime.sendMessage(message);
-    if (maybePromise && typeof maybePromise.catch === 'function') {
-      maybePromise.catch(() => {});
+    chrome.runtime.sendMessage(message, () => {
+      const errMsg = String(chrome.runtime?.lastError?.message || '');
+      if (errMsg.includes('Extension context invalidated')) {
+        bridgeRuntimeInvalidated = true;
+      }
+    });
+  } catch (err) {
+    if (String(err?.message || err || '').includes('Extension context invalidated')) {
+      bridgeRuntimeInvalidated = true;
     }
-  } catch (_err) {
     // Context may have been invalidated (e.g., extension reloaded).
   }
 }
@@ -75,9 +85,11 @@ function ensureBridgeToken() {
 }
 
 function isBridgeMessage(msg) {
+  const root = document.documentElement;
+  if (!root) return false;
   if (!msg || typeof msg !== 'object') return false;
   if (msg.source !== 'THROTTLE_CORE') return false;
-  if (msg.token !== document.documentElement.getAttribute(TOKEN_ATTR)) return false;
+  if (msg.token !== root.getAttribute(TOKEN_ATTR)) return false;
   if (msg.type !== 'USAGE_RESPONSE' && msg.type !== 'ORG_SEEN' && msg.type !== 'APP_START_METADATA') return false;
 
   if (msg.type === 'USAGE_RESPONSE') {

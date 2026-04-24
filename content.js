@@ -148,6 +148,26 @@
           flex-shrink: 0;
           gap: 5px;
         }
+        #sparkline-svg {
+          width: 64px;
+          height: 18px;
+          flex-shrink: 0;
+          display: block;
+          overflow: visible;
+          max-width: 0;
+          opacity: 0;
+          transform: translateX(-2px);
+          transition: max-width 0.28s ease, opacity 0.2s ease, transform 0.2s ease;
+          pointer-events: none;
+        }
+        .capsule:hover #sparkline-svg {
+          max-width: 64px;
+          opacity: 1;
+          transform: translateX(0);
+        }
+        .sparkline-track {
+          opacity: 0.35;
+        }
 
         /* Tag (5H, 7D) */
         .tag {
@@ -265,9 +285,20 @@
           padding: 0 12px;
           pointer-events: none;
           z-index: 2;
+          opacity: 1;
+          transform: scale(1);
+          transition: opacity 0.24s ease, transform 0.28s ease, background 0.28s ease, backdrop-filter 0.28s ease;
+          will-change: opacity, transform, backdrop-filter;
         }
         .capsule[data-locked="true"] .lock-overlay {
           display: flex;
+        }
+        .capsule[data-locked="true"]:hover .lock-overlay {
+          opacity: 0;
+          transform: scale(1.02);
+          background: rgba(10, 10, 12, 0.02);
+          backdrop-filter: blur(0px);
+          -webkit-backdrop-filter: blur(0px);
         }
         .lock-title {
           font-size: 10px;
@@ -287,9 +318,10 @@
         <div class="speedo-wrap" id="speedo-wrap">
           <svg width="28" height="18" viewBox="0 0 28 18" id="speedo-svg">
             <path d="M 2 16 A 12 12 0 0 1 26 16" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2.8" stroke-linecap="round"/>
-            <path d="M 2 16 A 12 12 0 0 1 8 5"   fill="none" stroke="#1e40af" stroke-width="2.8" stroke-linecap="round" opacity="0.7"/>
-            <path d="M 8 5 A 12 12 0 0 1 20 5"   fill="none" stroke="#16a34a" stroke-width="2.8" stroke-linecap="round" opacity="0.7"/>
-            <path d="M 20 5 A 12 12 0 0 1 26 16" fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round" opacity="0.7"/>
+            <path d="M 2 16 A 12 12 0 0 1 8 6"    fill="none" stroke="#1e40af" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
+            <path d="M 8 6 A 12 12 0 0 1 14 4.5"   fill="none" stroke="#16a34a" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
+            <path d="M 14 4.5 A 12 12 0 0 1 20 6"  fill="none" stroke="#ca8a04" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
+            <path d="M 20 6 A 12 12 0 0 1 26 16"   fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
             <line id="needle"
               x1="14" y1="16" x2="14" y2="5"
               stroke="#f59e0b" stroke-width="2" stroke-linecap="round"
@@ -298,6 +330,11 @@
           </svg>
           <span class="pace-val" id="pace-val">—</span>
           <span class="trend" id="trend-arrow" data-dir="stable">—</span>
+          <svg id="sparkline-svg" viewBox="0 0 64 18" aria-label="Curva de consumo">
+            <path id="sparkline-track" class="sparkline-track" d="M 1 15 H 63" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.2" stroke-linecap="round"/>
+            <path id="sparkline-path" d="" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle id="sparkline-dot" cx="63" cy="15" r="1.6" fill="#22c55e"/>
+          </svg>
         </div>
 
         <div class="divider"></div>
@@ -349,6 +386,37 @@
     return isLocked || uiState === 'critical';
   }
 
+  function sparklineColorFromUiState(uiState, lockOverlay) {
+    if (lockOverlay?.kind === 'monthly') return '#52525b';
+    if (lockOverlay?.kind === 'window' || lockOverlay?.active || uiState === 'critical') return '#ef4444';
+    if (uiState === 'attention') return '#ca8a04';
+    if (uiState === 'idle') return '#3b82f6';
+    return '#22c55e';
+  }
+
+  function renderSparkline(analysis, uiState, lockOverlay) {
+    const sparkline = shadow.getElementById('sparkline-svg');
+    const path = shadow.getElementById('sparkline-path');
+    const dot = shadow.getElementById('sparkline-dot');
+    const track = shadow.getElementById('sparkline-track');
+    if (!sparkline || !path || !dot || !track) return;
+
+    const series = analysis?.sparkline;
+    if (!series?.path || !Array.isArray(series.points) || series.points.length < 2) {
+      sparkline.hidden = true;
+      return;
+    }
+
+    const color = sparklineColorFromUiState(uiState, lockOverlay);
+    sparkline.hidden = false;
+    path.setAttribute('d', series.path);
+    path.style.stroke = color;
+    dot.setAttribute('cx', series.points[series.points.length - 1].x.toFixed(2));
+    dot.setAttribute('cy', series.points[series.points.length - 1].y.toFixed(2));
+    dot.style.fill = color;
+    track.style.opacity = lockOverlay?.active ? '0.2' : '0.35';
+  }
+
   // -------- Render --------
 
   function render(analysis) {
@@ -374,7 +442,7 @@
       // Meia-circunferência: -90deg (esquerda) a +90deg (direita)
       const angle = -90 + (clamped / 200) * 180;
       needle.style.transform = `rotate(${angle}deg)`;
-      paceEl.textContent = Math.round(rpmBlend);
+      paceEl.textContent = String(Math.min(299, Math.round(rpmBlend)));
       paceEl.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
     } else {
       paceEl.textContent = '—';
@@ -395,6 +463,8 @@
       trendEl.dataset.dir = 'stable';
       trendEl.title = 'ritmo estável';
     }
+
+    renderSparkline(analysis, uiState, lockOverlay);
 
     // --- 5H ---
     if (latest.u5h !== null) {
@@ -446,11 +516,11 @@
 
   function fmtMin(min) {
     if (min === null || min === undefined || !isFinite(min) || min < 0) return '—';
-    if (min < 1) return 'agora';
-    if (min < 60) return `em ${Math.round(min)}min`;
-    const h = Math.floor(min / 60);
-    const m = Math.round(min % 60);
-    return m > 0 ? `em ${h}h${m}m` : `em ${h}h`;
+    const totalMinutes = Math.max(0, Math.round(min));
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (h <= 0) return `${m}m`;
+    return `${h}h${String(m).padStart(2, '0')}m`;
   }
 
   // -------- Submit observer --------

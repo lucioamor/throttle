@@ -35,12 +35,12 @@
       ws_id:  wsId,
       ws_name: body.name || body.title || body.workspace_name || null,
 
-      // Créditos diários gratuitos
+    // Créditos diários gratuitos (free credits / daily allowance)
       daily_used:     body.daily_credits_used     ?? body.free_credits_used     ?? null,
       daily_total:    body.daily_credits_total    ?? body.free_credits_total    ?? 5,
       daily_reset_at: body.daily_credits_reset_at ?? body.free_credits_reset_at ?? null,
 
-      // Créditos mensais do workspace
+    // Créditos mensais do workspace (paid quota / monthly burn)
       monthly_used:     body.credits_used     ?? body.monthly_credits_used     ?? null,
       monthly_total:    body.credits_limit    ?? body.monthly_credits_total    ?? null,
       monthly_reset_at: body.credits_reset_at ?? body.monthly_credits_reset_at ?? null,

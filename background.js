@@ -32,18 +32,31 @@ import {
 const ALARM_NAME = 'throttle-fallback-poll';
 const STALE_MS = 4 * 60 * 60 * 1000;
 const KNOWN_PROVIDERS = new Set(['claude', 'lovable']);
+const ACTION_ICON_SIZES = [16, 32];
+const ACTION_ICON_MAX_PACE = 200;
+let lastActionIconKey = '';
 
 // -------- Lifecycle --------
 
 chrome.runtime.onInstalled.addListener(async () => {
   const s = await getSettings();
   await setupAlarm(s.activePollSeconds);
+  await refreshActionIcon();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   const s = await getSettings();
   await setupAlarm(s.activePollSeconds);
+  await refreshActionIcon();
 });
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (!changes.active_claude && !changes.active_lovable) return;
+  refreshActionIcon().catch(() => {});
+});
+
+void refreshActionIcon();
 
 async function setupAlarm(intervalSec) {
   const safeSeconds = Number.isFinite(intervalSec) ? intervalSec : 120;
@@ -125,8 +138,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           const providerId = providerIdFromOrgId(orgId);
           await ensureClaudeAccountDiscovered(providerId);
+          const promoteSender = await shouldPromoteSenderAsActive(sender);
           const active = await getActiveProviderId('claude');
-          if (!active) await setActiveProviderId('claude', providerId);
+          if (!active || promoteSender) await setActiveProviderId('claude', providerId);
           await handleClaudeUsage(providerId, safeMsg.data);
           sendResponse({ ok: true, accountId: providerId });
           return;
@@ -141,8 +155,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
           await ensureClaudeAccountDiscovered(providerId);
+          const promoteSender = await shouldPromoteSenderAsActive(sender);
           const active = await getActiveProviderId('claude');
-          if (!active) await setActiveProviderId('claude', providerId);
+          if (!active || promoteSender) await setActiveProviderId('claude', providerId);
           sendResponse({ ok: true, accountId: providerId });
           return;
         }
@@ -197,8 +212,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await upsertAccount(providerId, {
             label: typeof safeMsg.wsName === 'string' && safeMsg.wsName.trim() ? safeMsg.wsName.trim() : `WS ${wsId.slice(0, 8)}`
           });
+          const promoteSender = await shouldPromoteSenderAsActive(sender);
           const active = await getActiveProviderId('lovable');
-          if (!active) await setActiveProviderId('lovable', providerId);
+          if (!active || promoteSender) await setActiveProviderId('lovable', providerId);
           await handleLovableUsage(providerId, safeMsg.data);
           sendResponse({ ok: true, accountId: providerId });
           return;
@@ -331,6 +347,18 @@ function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+async function shouldPromoteSenderAsActive(sender) {
+  const tabId = sender?.tab?.id;
+  if (typeof tabId !== 'number') return false;
+  if (sender?.tab?.active === true) return true;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return !!tab?.active;
+  } catch (_err) {
+    return false;
+  }
+}
+
 // -------- Claude poll --------
 
 async function pollClaude(providerId, meta = {}) {
@@ -390,6 +418,7 @@ async function handleClaudeUsage(providerId, data) {
   await pushSnapshot(providerId, snap);
   const snapshots = await getSnapshots(providerId);
   const analysis = analyze(snapshots);
+  await updateActionIconFromAnalysis(analysis);
 
   broadcastToTabs('https://claude.ai/*', {
     type: 'STATE_UPDATE',
@@ -408,6 +437,7 @@ async function handleLovableUsage(providerId, data) {
   await pushSnapshot(providerId, snap);
   const snapshots = await getSnapshots(providerId);
   const analysis = analyzeLovable(snapshots);
+  await updateActionIconFromAnalysis(analysis);
 
   const payload = {
     type: 'STATE_UPDATE',
@@ -430,6 +460,255 @@ function broadcastToTabs(urlPattern, message) {
       chrome.tabs.sendMessage(tab.id, message).catch(() => {});
     }
   });
+}
+
+// -------- Action icon (dynamic speedometer) --------
+
+async function refreshActionIcon() {
+  try {
+    const [claudeId, lovableId] = await Promise.all([
+      getActiveProviderId('claude'),
+      getActiveProviderId('lovable')
+    ]);
+
+    const candidates = [];
+
+    if (claudeId) {
+      const claudeSnaps = await getSnapshots(claudeId);
+      if (claudeSnaps.length) {
+        const claudeAnalysis = analyze(claudeSnaps);
+        if (claudeAnalysis?.ready) candidates.push(claudeAnalysis);
+      } else {
+        candidates.push({ ready: false, provider: 'claude' });
+      }
+    }
+
+    if (lovableId) {
+      const lovableSnaps = await getSnapshots(lovableId);
+      if (lovableSnaps.length) {
+        const lovableAnalysis = analyzeLovable(lovableSnaps);
+        if (lovableAnalysis?.ready) candidates.push(lovableAnalysis);
+      } else {
+        candidates.push({ ready: false, provider: 'lovable' });
+      }
+    }
+
+    if (!candidates.length) {
+      await updateActionIconFromAnalysis(null);
+      return;
+    }
+
+    const readyCandidates = candidates.filter((candidate) => candidate?.ready);
+    if (!readyCandidates.length) {
+      await updateActionIconFromAnalysis(candidates[0]);
+      return;
+    }
+
+    readyCandidates.sort((a, b) => {
+      const aTs = Number.isFinite(a?.latest?.t) ? a.latest.t : 0;
+      const bTs = Number.isFinite(b?.latest?.t) ? b.latest.t : 0;
+      return bTs - aTs;
+    });
+    await updateActionIconFromAnalysis(readyCandidates[0]);
+  } catch (err) {
+    console.warn('[Throttle] icon refresh failed:', err?.message || err);
+    await setDefaultActionIcon();
+  }
+}
+
+async function updateActionIconFromAnalysis(analysis) {
+  if (typeof OffscreenCanvas === 'undefined') {
+    await setDefaultActionIcon();
+    return;
+  }
+
+  const model = buildActionIconModel(analysis);
+  const key = actionIconModelKey(model);
+  if (key === lastActionIconKey) return;
+
+  const imageData = buildActionIconImageData(model);
+  if (!imageData) {
+    await setDefaultActionIcon();
+    return;
+  }
+
+  await chrome.action.setIcon({ imageData });
+  lastActionIconKey = key;
+}
+
+function buildActionIconModel(analysis) {
+  const provider = analysis?.provider === 'lovable'
+    ? 'lovable'
+    : analysis?.provider === 'claude'
+      ? 'claude'
+      : 'unknown';
+
+  if (!analysis || analysis.ready !== true) {
+    return {
+      provider,
+      uiState: 'loading',
+      pace: null,
+      locked: false
+    };
+  }
+
+  const rawPace = provider === 'lovable' ? analysis.todayPace : analysis.rpmBlend;
+  return {
+    provider,
+    uiState: typeof analysis.uiState === 'string' ? analysis.uiState : 'loading',
+    pace: Number.isFinite(rawPace) ? rawPace : null,
+    locked: !!analysis.lockOverlay?.active
+  };
+}
+
+function actionIconModelKey(model) {
+  const roundedPace = model.pace === null ? 'na' : String(Math.round(model.pace));
+  return `${model.provider}|${model.uiState}|${model.locked ? '1' : '0'}|${roundedPace}`;
+}
+
+function buildActionIconImageData(model) {
+  const iconMap = {};
+  for (const size of ACTION_ICON_SIZES) {
+    const frame = renderSpeedometerIcon(size, model);
+    if (!frame) return null;
+    iconMap[size] = frame;
+  }
+  return iconMap;
+}
+
+function renderSpeedometerIcon(size, model) {
+  const canvas = new OffscreenCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.lineCap = 'round';
+
+  const uiState = model.uiState || 'loading';
+  const highRisk = isHighRiskIconState(uiState, model.locked);
+  const paceLabel = formatActionIconLabel(model, uiState);
+
+  // Split icon into two zones:
+  // top => speedometer; bottom => numeric digits.
+  const digitsBandHeight = Math.max(5, Math.round(size * 0.38));
+  const digitsBandTop = size - digitsBandHeight;
+  const gaugeBottom = digitsBandTop - 1;
+  const cx = size / 2;
+  const cy = gaugeBottom;
+  const radius = Math.max(2.6, Math.min(size * 0.34, gaugeBottom - 1.6));
+  const arcWidth = Math.max(1.1, size * 0.095);
+
+  ctx.lineWidth = arcWidth;
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, Math.PI, Math.PI * 2, false);
+  ctx.stroke();
+
+  const segmentAlpha = uiState === 'loading' ? 0.55 : 0.95;
+  ctx.globalAlpha = segmentAlpha;
+  // Same visual proportions as the pill gauge: wide edges, slimmer middle bands.
+  drawIconArc(ctx, cx, cy, radius, 0, 66, '#3b82f6');
+  drawIconArc(ctx, cx, cy, radius, 66, 100, '#22c55e');
+  drawIconArc(ctx, cx, cy, radius, 100, 134, '#f59e0b');
+  drawIconArc(ctx, cx, cy, radius, 134, 200, '#ef4444');
+  ctx.globalAlpha = 1;
+
+  const drawPace = Number.isFinite(model.pace) && uiState !== 'loading' && uiState !== 'idle'
+    ? clamp(model.pace, 0, ACTION_ICON_MAX_PACE)
+    : 0;
+  const angleDeg = -90 + (drawPace / ACTION_ICON_MAX_PACE) * 180;
+  const angle = (angleDeg * Math.PI) / 180;
+  const needleLen = Math.max(1, radius - arcWidth * 0.55);
+  const x2 = cx + Math.sin(angle) * needleLen;
+  const y2 = cy - Math.cos(angle) * needleLen;
+
+  let needleColor = '#f59e0b';
+  if (uiState === 'loading') needleColor = '#94a3b8';
+  else if (uiState === 'idle') needleColor = '#60a5fa';
+  else if (highRisk) needleColor = '#ef4444';
+  else if (uiState === 'attention') needleColor = '#eab308';
+
+  ctx.strokeStyle = needleColor;
+  ctx.lineWidth = Math.max(1.2, size * 0.11);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  ctx.fillStyle = needleColor;
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(1.1, size * 0.085), 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bottom band improves readability for 2-3 digits at 16x16.
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.92)';
+  ctx.fillRect(0, digitsBandTop, size, digitsBandHeight);
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, digitsBandTop + 0.5);
+  ctx.lineTo(size, digitsBandTop + 0.5);
+  ctx.stroke();
+
+  let labelColor = '#f8fafc';
+  if (uiState === 'loading') labelColor = '#cbd5e1';
+  else if (highRisk) labelColor = '#fecaca';
+  else if (uiState === 'attention') labelColor = '#fde68a';
+
+  const fontPx = Math.max(6, Math.floor(digitsBandHeight * 0.9));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${fontPx}px "Segoe UI", Arial, sans-serif`;
+  const labelY = digitsBandTop + (digitsBandHeight / 2);
+
+  // Tiny shadow to keep readability over anti-aliasing at 16px.
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillText(paceLabel, Math.round(cx), Math.round(labelY) + 1);
+  ctx.fillStyle = labelColor;
+  ctx.fillText(paceLabel, Math.round(cx), Math.round(labelY));
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function drawIconArc(ctx, cx, cy, radius, fromPace, toPace, color) {
+  const from = paceToTopArcRad(fromPace);
+  const to = paceToTopArcRad(toPace);
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, from, to, false);
+  ctx.stroke();
+}
+
+function paceToTopArcRad(pace) {
+  const clamped = clamp(pace, 0, ACTION_ICON_MAX_PACE);
+  return Math.PI + (clamped / ACTION_ICON_MAX_PACE) * Math.PI;
+}
+
+function isHighRiskIconState(uiState, locked) {
+  if (locked) return true;
+  return uiState === 'critical' || uiState === 'locked_5h' || uiState === 'locked_monthly';
+}
+
+function formatActionIconLabel(model, uiState) {
+  if (uiState === 'loading') return '--';
+  if (!Number.isFinite(model?.pace)) return '0';
+  return String(Math.round(clamp(model.pace, 0, 999)));
+}
+
+async function setDefaultActionIcon() {
+  await chrome.action.setIcon({
+    path: {
+      16: 'icons/icon16.png',
+      48: 'icons/icon48.png',
+      128: 'icons/icon128.png'
+    }
+  });
+  lastActionIconKey = 'default';
+}
+
+function clamp(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }
 
 // -------- Alerts --------

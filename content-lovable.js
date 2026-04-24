@@ -432,10 +432,11 @@
 
   function fmtMin(min) {
     if (min === null || !isFinite(min) || min < 0) return '—';
-    if (min < 1) return 'agora';
-    if (min < 60) return `em ${Math.round(min)}min`;
-    const h = Math.floor(min / 60), m = Math.round(min % 60);
-    return m > 0 ? `em ${h}h${m}m` : `em ${h}h`;
+    const totalMinutes = Math.max(0, Math.round(min));
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (h <= 0) return `${m}m`;
+    return `${h}h${String(m).padStart(2, '0')}m`;
   }
 
   // -------- State subscription --------
