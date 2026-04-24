@@ -44,7 +44,7 @@
       "matches": ["https://lovable.dev/*", "https://*.lovable.dev/*"],
       "js": ["content-lovable.js"],
       "css": ["overlay.css"],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "world": "ISOLATED"
     }
   ],
