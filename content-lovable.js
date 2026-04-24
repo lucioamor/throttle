@@ -78,26 +78,83 @@
     return token;
   }
 
+  function extractWorkspaceIdFromUrl(url) {
+    if (typeof url !== 'string') return null;
+    const match = url.match(/\/workspaces\/([a-zA-Z0-9_-]+)/);
+    return match && WS_ID_RE.test(match[1]) ? match[1] : null;
+  }
+
+  function extractWorkspaceIdFromBody(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+    const direct = body.id || body.workspace_id || body.workspaceId || body.ws_id || body.workspace?.id;
+    if (typeof direct === 'string' && WS_ID_RE.test(direct)) return direct;
+
+    const nested = body.data && typeof body.data === 'object' && !Array.isArray(body.data)
+      ? extractWorkspaceIdFromBody(body.data)
+      : null;
+    if (nested) return nested;
+
+    const project = Array.isArray(body.projects) && body.projects.length === 1 ? body.projects[0] : null;
+    const projectWs = project?.workspace_id || project?.workspaceId || project?.workspace?.id;
+    return typeof projectWs === 'string' && WS_ID_RE.test(projectWs) ? projectWs : null;
+  }
+
+  function inferWorkspaceIdFromApiPayload(payload) {
+    const fromPayload = typeof payload?.workspaceId === 'string' && WS_ID_RE.test(payload.workspaceId)
+      ? payload.workspaceId
+      : null;
+    return fromPayload || extractWorkspaceIdFromUrl(payload?.url) || extractWorkspaceIdFromBody(payload?.body);
+  }
+
+  function setTabWorkspace(wsId) {
+    if (!wsId || !WS_ID_RE.test(wsId)) return false;
+    const nextAccountId = `lovable:${wsId}`;
+    if (tabAccountId === nextAccountId) return false;
+    tabAccountId = nextAccountId;
+    requestState();
+    return true;
+  }
+
   // -------- Bridge: MAIN world → background --------
 
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const msg = event.data;
-    if (msg?.source !== 'THROTTLE_LOVABLE' || msg?.type !== 'LOVABLE_USAGE') return;
+    if (msg?.source !== 'THROTTLE_LOVABLE') return;
     if (msg.token !== document.documentElement.getAttribute(LOVABLE_TOKEN_ATTR)) return;
 
-    const snap = msg.payload;
-    if (!snap?.ws_id || !WS_ID_RE.test(snap.ws_id)) return;
+    if (msg.type === 'LOVABLE_USAGE') {
+      const snap = msg.payload;
+      if (!snap?.ws_id || !WS_ID_RE.test(snap.ws_id)) return;
 
-    // Atualiza o contexto da aba caso o workspace mude
-    tabAccountId = `lovable:${snap.ws_id}`;
+      // Atualiza o contexto da aba caso o workspace mude
+      tabAccountId = `lovable:${snap.ws_id}`;
 
-    safeSendMessage({
-      type:    'LOVABLE_USAGE_INTERCEPTED',
-      wsId:    snap.ws_id,
-      wsName:  snap.ws_name,
-      data:    snap
-    });
+      safeSendMessage({
+        type:    'LOVABLE_USAGE_INTERCEPTED',
+        wsId:    snap.ws_id,
+        wsName:  snap.ws_name,
+        data:    snap
+      });
+      return;
+    }
+
+    if (msg.type === 'LOVABLE_API_DATA') {
+      setTabWorkspace(inferWorkspaceIdFromApiPayload(msg.payload));
+      safeSendMessage({
+        type: 'LOVABLE_API_DATA',
+        data: msg.payload
+      });
+      return;
+    }
+
+    if (msg.type === 'LOVABLE_AUTH_TOKEN') {
+      safeSendMessage({
+        type: 'LOVABLE_AUTH_TOKEN',
+        authToken: msg.payload?.authToken,
+        url: msg.payload?.url || null
+      });
+    }
   });
 
   // -------- Shadow DOM --------
@@ -198,13 +255,19 @@
         .dots { display: flex; gap: 3px; align-items: center; }
         .dot  { width: 6px; height: 6px; border-radius: 50%; transition: background 0.3s ease; flex-shrink: 0; }
         .dot.used { background: rgba(255,255,255,0.15); }
-        .dot.avail { background: #22c55e; }
-        .dot.avail[data-warn="true"] { background: #eab308; }
+        .dot.avail[data-level="blue"] { background: #3b82f6; }
+        .dot.avail[data-level="green"] { background: #22c55e; }
+        .dot.avail[data-level="yellow"] { background: #eab308; }
+        .dot.avail[data-level="red"] { background: #ef4444; }
 
         /* MONTHLY BURN bar */
         .bar-wrap { width: 44px; height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
         .bar-fill { height: 100%; border-radius: 2px; transition: width 0.9s cubic-bezier(0.4,0,0.2,1), background 0.3s ease; }
-        .pct { font-weight: 600; font-size: 12px; color: #fafafa; min-width: 30px; text-align: right; }
+        .pct { font-weight: 600; font-size: 12px; color: #fafafa; min-width: 36px; text-align: right; }
+        .pct[data-level="blue"] { color: #60a5fa; }
+        .pct[data-level="green"] { color: #86efac; }
+        .pct[data-level="yellow"] { color: #facc15; }
+        .pct[data-level="red"] { color: #f87171; }
 
         /* Cloud/AI badges — só quando em risco */
         .passive-badges { display: flex; gap: 4px; padding: 0 8px; flex-shrink: 0; }
@@ -325,6 +388,18 @@
     return isLocked || uiState === 'critical';
   }
 
+  function lovableDailyLevel(remaining) {
+    if (!Number.isFinite(remaining)) return 'red';
+    if (remaining >= 4) return 'blue';
+    if (remaining >= 3) return 'green';
+    if (remaining >= 2) return 'yellow';
+    return 'red';
+  }
+
+  function formatLovableCredits(value) {
+    return Number.isFinite(value) ? value.toFixed(1) : '—';
+  }
+
   // -------- Render --------
 
   function render(analysis) {
@@ -371,17 +446,19 @@
     const dotsEl = shadow.getElementById('daily-dots');
     dotsEl.innerHTML = '';
     const total = dailyTotal || 5;
-    const used  = total - (dailyRemaining ?? 0);
-    const warn  = highRisk;
+    const remaining = Number.isFinite(dailyRemaining) ? dailyRemaining : null;
+    const used  = remaining === null ? total : Math.ceil(Math.max(0, total - remaining));
+    const dailyLevel = lovableDailyLevel(remaining);
     for (let i = 0; i < total; i++) {
       const dot = document.createElement('div');
       dot.className = i < used ? 'dot used' : 'dot avail';
-      if (i >= used) dot.dataset.warn = warn ? 'true' : 'false';
+      if (i >= used) dot.dataset.level = dailyLevel;
       dotsEl.appendChild(dot);
     }
 
     const remainEl = shadow.getElementById('daily-remaining');
-    remainEl.textContent = dailyRemaining !== null ? `${dailyRemaining}cr` : '—';
+    remainEl.textContent = remaining !== null ? `${formatLovableCredits(remaining)}cr` : '—';
+    remainEl.dataset.level = dailyLevel;
 
     // Monthly
     const monthFill = shadow.getElementById('monthly-fill');
@@ -442,6 +519,7 @@
   // -------- State subscription --------
 
   function requestState() {
+    if (!tabAccountId) return;
     safeSendMessage({
       type: 'GET_STATE', provider: 'lovable', accountId: tabAccountId
     }, (resp) => {
@@ -482,6 +560,7 @@
 
   // -------- Init --------
 
+  setTabWorkspace(extractWorkspaceIdFromUrl(location.href));
   injectInterceptor();
 
   chrome.storage.local.get('settings', ({ settings }) => {

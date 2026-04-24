@@ -46,7 +46,10 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .lv-dot.avail { background: #22c55e; }
+    .lv-dot.avail[data-level="blue"] { background: #3b82f6; }
+    .lv-dot.avail[data-level="green"] { background: #22c55e; }
+    .lv-dot.avail[data-level="yellow"] { background: #eab308; }
+    .lv-dot.avail[data-level="red"] { background: #ef4444; }
     .lv-dot.used  { background: #27272a; }
     .lv-daily-text {
       font-size: 11px;
@@ -54,6 +57,13 @@
       font-family: ui-monospace, monospace;
       margin-top: 2px;
     }
+    .lv-daily-remaining {
+      font-weight: 700;
+    }
+    .lv-daily-remaining[data-level="blue"] { color: #60a5fa; }
+    .lv-daily-remaining[data-level="green"] { color: #86efac; }
+    .lv-daily-remaining[data-level="yellow"] { color: #facc15; }
+    .lv-daily-remaining[data-level="red"] { color: #f87171; }
 
     /* Monthly burn indicator */
     .lv-burn-row {
@@ -73,6 +83,27 @@
       font-weight: 700;
       letter-spacing: 0.12em;
       margin-bottom: 4px;
+    }
+    .lv-passive-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+    }
+    .lv-passive-grid .stat {
+      min-width: 0;
+    }
+    .lv-passive-grid .stat-label {
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+    .lv-passive-grid .stat-row {
+      gap: 6px;
+    }
+    .lv-passive-grid .stat-sub {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -233,23 +264,25 @@
           <div class="lv-burn-row"><b id="lv-monthly-burn">—</b></div>
         </div>
 
-        <!-- Cloud (passivo) -->
-        <div class="stat" id="lv-cloud-wrap" style="display:none;">
-          <div class="stat-label">LOVABLE CLOUD <span class="lv-passive-label">passivo</span></div>
-          <div class="stat-bar"><div class="stat-fill" id="lv-cloud-fill" style="width:0%"></div></div>
-          <div class="stat-row">
-            <span id="lv-cloud-pct" class="stat-pct">—</span>
-            <span id="lv-cloud-sub" class="stat-sub">—</span>
+        <div class="lv-passive-grid">
+          <!-- Cloud (passivo) -->
+          <div class="stat" id="lv-cloud-wrap" style="display:none;">
+            <div class="stat-label">CLOUD <span class="lv-passive-label">passivo</span></div>
+            <div class="stat-bar"><div class="stat-fill" id="lv-cloud-fill" style="width:0%"></div></div>
+            <div class="stat-row">
+              <span id="lv-cloud-pct" class="stat-pct">—</span>
+              <span id="lv-cloud-sub" class="stat-sub">—</span>
+            </div>
           </div>
-        </div>
 
-        <!-- AI (passivo) -->
-        <div class="stat" id="lv-ai-wrap" style="display:none;">
-          <div class="stat-label">LOVABLE AI <span class="lv-passive-label">passivo</span></div>
-          <div class="stat-bar"><div class="stat-fill" id="lv-ai-fill" style="width:0%"></div></div>
-          <div class="stat-row">
-            <span id="lv-ai-pct" class="stat-pct">—</span>
-            <span id="lv-ai-sub" class="stat-sub">—</span>
+          <!-- AI (passivo) -->
+          <div class="stat" id="lv-ai-wrap" style="display:none;">
+            <div class="stat-label">AI <span class="lv-passive-label">passivo</span></div>
+            <div class="stat-bar"><div class="stat-fill" id="lv-ai-fill" style="width:0%"></div></div>
+            <div class="stat-row">
+              <span id="lv-ai-pct" class="stat-pct">—</span>
+              <span id="lv-ai-sub" class="stat-sub">—</span>
+            </div>
           </div>
         </div>
 

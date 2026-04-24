@@ -1,6 +1,5 @@
-// interceptor-lovable.js — Throttle v2
-// Roda no MAIN world (injetado via content-lovable.js).
-// Intercepta fetch e XHR da API do Lovable e posta payload normalizado para o bridge.
+// interceptor-lovable.js - Throttle v2
+// Runs in the MAIN world and relays raw Lovable API responses to the bridge.
 
 (() => {
   if (window.__THROTTLE_LOVABLE_PATCHED__) return;
@@ -8,51 +7,10 @@
 
   const TOKEN_ATTR = 'data-throttle-lovable-token';
   const WS_ID_RE = /^[a-zA-Z0-9_-]{2,128}$/;
-  let lastSnapshot = null;
+  let lastApiPayload = null;
 
   function currentToken() {
     return document.documentElement.getAttribute(TOKEN_ATTR);
-  }
-
-  // -------- Normalização do payload --------
-  // A API do Lovable pode mudar — o parser extrai só o que existe.
-
-  function extractWsId(url) {
-    // /workspaces/{id} ou /api/workspaces/{id} ou /v1/workspaces/{id}
-    const m = url.match(/workspaces\/([a-zA-Z0-9_-]+)/);
-    return m ? m[1] : null;
-  }
-
-  function normalizePayload(url, body) {
-    if (!body || typeof body !== 'object') return null;
-
-    const wsId = extractWsId(url) || body.id || body.workspace_id || body.ws_id;
-    if (!wsId || !WS_ID_RE.test(wsId)) return null;
-
-    const snap = {
-      ws_id:   wsId,
-      ws_name: body.name || body.title || body.workspace_name || null,
-
-      // Créditos diários — campo real da API é "limit", não "total"
-      daily_used:     body.daily_credits_used  ?? null,
-      daily_total:    body.daily_credits_limit ?? body.daily_credits_total ?? 5,
-      daily_reset_at: body.daily_credits_reset_at ?? null,
-
-      // Créditos do billing period — campos reais da API
-      monthly_used:     body.billing_period_credits_used ?? body.total_credits_used_in_billing_period ?? body.credits_used ?? null,
-      monthly_total:    body.billing_period_credits_limit ?? body.credits_limit ?? null,
-      monthly_reset_at: body.billing_period_end_date ?? body.credits_reset_at ?? null,
-
-      // Cloud/AI — endpoint /lovable-cloud-monthly-usage: { cloud_usage: {used,free}, ai_gateway_usage: {used,free} }
-      cloud_used:  body.cloud_usage?.used  ?? body.cloud_credits_used  ?? null,
-      cloud_total: body.cloud_usage?.free  ?? body.cloud_credits_limit ?? null,
-      ai_used:     body.ai_gateway_usage?.used  ?? body.ai_credits_used  ?? null,
-      ai_total:    body.ai_gateway_usage?.free  ?? body.ai_credits_limit ?? null,
-    };
-
-    // Descarta se nenhum campo de dados existe (nem diário, nem mensal, nem cloud/ai)
-    if (snap.daily_used === null && snap.monthly_used === null && snap.cloud_used === null && snap.ai_used === null) return null;
-    return snap;
   }
 
   function isLovableApi(url) {
@@ -62,16 +20,44 @@
     );
   }
 
-  function tryPost(snap) {
+  function extractWsId(url) {
+    const match = typeof url === 'string' ? url.match(/\/workspaces\/([a-zA-Z0-9_-]+)/) : null;
+    return match && WS_ID_RE.test(match[1]) ? match[1] : null;
+  }
+
+  function getHeaderValue(headers, name) {
+    if (!headers) return null;
+    const lowerName = name.toLowerCase();
+    try {
+      if (headers instanceof Headers) return headers.get(name) || headers.get(lowerName);
+      if (Array.isArray(headers)) {
+        const entry = headers.find(([key]) => String(key).toLowerCase() === lowerName);
+        return entry ? entry[1] : null;
+      }
+      if (typeof headers === 'object') return headers[name] || headers[lowerName] || null;
+    } catch (_err) {}
+    return null;
+  }
+
+  function postToBridge(type, payload) {
     const token = currentToken();
     if (!token) return;
-    lastSnapshot = snap;
     window.postMessage({
       source: 'THROTTLE_LOVABLE',
-      type:   'LOVABLE_USAGE',
+      type,
       token,
-      payload: snap
+      payload
     }, '*');
+  }
+
+  function postApiPayload(payload) {
+    lastApiPayload = payload;
+    postToBridge('LOVABLE_API_DATA', payload);
+  }
+
+  function postAuthToken(authToken, url) {
+    if (!authToken) return;
+    postToBridge('LOVABLE_AUTH_TOKEN', { authToken, url });
   }
 
   window.addEventListener('message', (event) => {
@@ -79,51 +65,76 @@
     const msg = event.data;
     if (msg?.source !== 'THROTTLE_LOVABLE' || msg?.type !== 'FORCE_REFRESH') return;
     if (msg.token !== currentToken()) return;
-    if (lastSnapshot) tryPost(lastSnapshot);
+    if (lastApiPayload) postApiPayload(lastApiPayload);
   });
-
-  // -------- Fetch patch --------
 
   const originalFetch = window.fetch;
   window.fetch = async function patchedFetch(...args) {
     const response = await originalFetch.apply(this, args);
+
     try {
       let url = '';
       const first = args[0];
       if (typeof first === 'string') url = first;
-      else if (first?.url) url = first.url;
       else if (first instanceof URL) url = first.href;
+      else if (first?.url) url = first.url;
 
       if (isLovableApi(url)) {
-        response.clone().json().then(body => {
-          const snap = normalizePayload(url, body);
-          if (snap) tryPost(snap);
+        const init = args[1] || {};
+        const method = init.method || first?.method || 'GET';
+        const authHeader = getHeaderValue(init.headers, 'Authorization')
+          || getHeaderValue(first?.headers, 'Authorization');
+
+        postAuthToken(authHeader, url);
+
+        response.clone().json().then((body) => {
+          postApiPayload({
+            url,
+            method,
+            workspaceId: extractWsId(url),
+            body
+          });
         }).catch(() => {});
       }
-    } catch (e) {}
+    } catch (_err) {}
+
     return response;
   };
 
-  // -------- XHR patch --------
-
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
+  const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
 
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     this._throttleUrl = url;
+    this._throttleMethod = method;
+    this._throttleHeaders = {};
     return origOpen.call(this, method, url, ...rest);
+  };
+
+  XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    if (this._throttleHeaders) this._throttleHeaders[name] = value;
+    return origSetHeader.call(this, name, value);
   };
 
   XMLHttpRequest.prototype.send = function(...args) {
     this.addEventListener('load', function() {
       try {
-        if (!isLovableApi(this._throttleUrl || '')) return;
+        const url = this._throttleUrl || '';
+        if (!isLovableApi(url)) return;
+
+        const authHeader = this._throttleHeaders?.Authorization || this._throttleHeaders?.authorization;
+        postAuthToken(authHeader, url);
+
         const body = JSON.parse(this.responseText);
-        const snap = normalizePayload(this._throttleUrl, body);
-        if (snap) tryPost(snap);
-      } catch (e) {}
+        postApiPayload({
+          url,
+          method: this._throttleMethod || 'GET',
+          workspaceId: extractWsId(url),
+          body
+        });
+      } catch (_err) {}
     });
     return origSend.apply(this, args);
   };
-
 })();

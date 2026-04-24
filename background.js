@@ -26,7 +26,9 @@ import {
 import {
   isValidLovableWorkspaceId,
   providerIdFromWorkspaceId,
-  normalizeLovableSnapshot
+  workspaceIdFromProviderId,
+  normalizeLovableSnapshot,
+  normalizeLovableApiPayload
 } from './lib/providers/lovable.js';
 
 const ALARM_NAME = 'throttle-fallback-poll';
@@ -48,6 +50,9 @@ const ACTION_ICON_GLYPHS = Object.freeze({
   '-': ['000', '000', '111', '000', '000']
 });
 let lastActionIconKey = '';
+let lastLovableAuthToken = null;
+let lastLovableTokenPollAt = 0;
+const LOVABLE_TOKEN_POLL_COOLDOWN_MS = 60 * 1000;
 
 // -------- Lifecycle --------
 
@@ -97,7 +102,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   const lovableId = await getActiveProviderId('lovable');
   if (lovableId) {
-    const snaps = await getSnapshots(lovableId);
+    let snaps = await getSnapshots(lovableId);
+    const lastAge = snaps.length ? Date.now() - snaps[snaps.length - 1].t : Infinity;
+    if (lastAge > settings.activePollSeconds * 1000 * 0.9) {
+      await pollLovable(lovableId, { origin: 'alarm' });
+      snaps = await getSnapshots(lovableId);
+    }
     await checkStale(lovableId, snaps, 'Lovable');
   }
 });
@@ -230,6 +240,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!active || promoteSender) await setActiveProviderId('lovable', providerId);
           await handleLovableUsage(providerId, safeMsg.data);
           sendResponse({ ok: true, accountId: providerId });
+          return;
+        }
+
+        case 'LOVABLE_API_DATA': {
+          if (!isObject(safeMsg.data)) {
+            sendResponse({ ok: false, reason: 'invalid_lovable_api_payload' });
+            return;
+          }
+          const result = await handleLovableApiData(safeMsg.data, sender);
+          sendResponse(result);
+          return;
+        }
+
+        case 'LOVABLE_AUTH_TOKEN': {
+          const result = await handleLovableAuthToken(safeMsg.authToken, safeMsg.url);
+          sendResponse(result);
           return;
         }
 
@@ -412,14 +438,145 @@ async function pollClaude(providerId, meta = {}) {
   }
 }
 
+function normalizeAuthHeader(token) {
+  if (!token || typeof token !== 'string') return null;
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase().startsWith('bearer ') ? trimmed : `Bearer ${trimmed}`;
+}
+
+async function getLovableAuthHeader() {
+  if (lastLovableAuthToken) return normalizeAuthHeader(lastLovableAuthToken);
+  const { lovableAuthToken = null } = await chrome.storage.local.get('lovableAuthToken');
+  lastLovableAuthToken = typeof lovableAuthToken === 'string' ? lovableAuthToken : null;
+  return normalizeAuthHeader(lastLovableAuthToken);
+}
+
+async function handleLovableAuthToken(authToken, url = null) {
+  const header = normalizeAuthHeader(authToken);
+  if (!header) return { ok: false, reason: 'invalid_lovable_auth_token' };
+
+  const previous = lastLovableAuthToken;
+  lastLovableAuthToken = header;
+  await chrome.storage.local.set({ lovableAuthToken: header });
+
+  const now = Date.now();
+  const shouldPoll = header !== previous || (now - lastLovableTokenPollAt) > LOVABLE_TOKEN_POLL_COOLDOWN_MS;
+  if (shouldPoll) {
+    lastLovableTokenPollAt = now;
+    pollLovable(null, { origin: 'auth_capture', url }).catch((err) => {
+      console.warn('[Throttle] Lovable auth poll failed:', err?.message || err);
+    });
+  }
+
+  return { ok: true };
+}
+
+async function handleLovableApiData(apiData, sender = null) {
+  const payloads = normalizeLovableApiPayload(apiData);
+  if (!payloads.length) return { ok: false, reason: 'no_lovable_usage_payloads' };
+
+  const promoteSender = await shouldPromoteSenderAsActive(sender);
+  const shouldPromotePayload = promoteSender && payloads.length === 1;
+  const touched = [];
+
+  for (const data of payloads) {
+    const wsId = data.ws_id;
+    if (!isValidLovableWorkspaceId(wsId)) continue;
+
+    const providerId = providerIdFromWorkspaceId(wsId);
+    await upsertAccount(providerId, {
+      label: typeof data.ws_name === 'string' && data.ws_name.trim() ? data.ws_name.trim() : `WS ${wsId.slice(0, 8)}`
+    });
+
+    const active = await getActiveProviderId('lovable');
+    if (!active || shouldPromotePayload) await setActiveProviderId('lovable', providerId);
+
+    const stored = await handleLovableUsage(providerId, data);
+    if (stored) touched.push(providerId);
+  }
+
+  return touched.length
+    ? { ok: true, accountIds: [...new Set(touched)] }
+    : { ok: false, reason: 'no_lovable_snapshots_stored' };
+}
+
+async function pollLovable(requestedAccountId = null, meta = {}) {
+  const authHeader = await getLovableAuthHeader();
+  if (!authHeader) return { ok: false, reason: 'no_auth_token' };
+
+  const requestedProviderId = requestedAccountId
+    ? await resolveAccountId('lovable', requestedAccountId)
+    : null;
+  const requestedWsId = workspaceIdFromProviderId(requestedProviderId);
+
+  try {
+    const wsUrl = 'https://api.lovable.dev/user/workspaces';
+    const wsRes = await fetch(wsUrl, {
+      headers: { Authorization: authHeader, accept: 'application/json' }
+    });
+
+    if (wsRes.status === 401 || wsRes.status === 403) {
+      lastLovableAuthToken = null;
+      await chrome.storage.local.remove('lovableAuthToken');
+      return { ok: false, reason: `auth_${wsRes.status}` };
+    }
+
+    if (!wsRes.ok) return { ok: false, reason: `status_${wsRes.status}` };
+
+    const wsBody = await wsRes.json().catch(() => null);
+    if (!wsBody) return { ok: false, reason: 'invalid_json' };
+
+    const wsResult = await handleLovableApiData({ url: wsUrl, method: 'GET', body: wsBody });
+    const accountIds = new Set(wsResult.accountIds || []);
+
+    const usageTargets = requestedWsId
+      ? [requestedWsId]
+      : [...accountIds]
+          .map((providerId) => workspaceIdFromProviderId(providerId))
+          .filter(Boolean);
+
+    for (const wsId of usageTargets) {
+      const usageUrl = `https://api.lovable.dev/workspaces/${encodeURIComponent(wsId)}/lovable-cloud-monthly-usage`;
+      try {
+        const usageRes = await fetch(usageUrl, {
+          headers: { Authorization: authHeader, accept: 'application/json' }
+        });
+        if (!usageRes.ok) continue;
+        const usageBody = await usageRes.json().catch(() => null);
+        if (!usageBody) continue;
+        const usageResult = await handleLovableApiData({
+          url: usageUrl,
+          method: 'GET',
+          workspaceId: wsId,
+          body: usageBody
+        });
+        for (const accountId of usageResult.accountIds || []) accountIds.add(accountId);
+      } catch (_err) {}
+    }
+
+    if (requestedProviderId && !accountIds.has(requestedProviderId)) {
+      return { ok: false, reason: 'workspace_not_found', accountId: requestedProviderId, origin: meta.origin || null };
+    }
+
+    return { ok: accountIds.size > 0, accountIds: [...accountIds], origin: meta.origin || null };
+  } catch (err) {
+    console.warn('[Throttle] Lovable poll failed:', err?.message || err);
+    return { ok: false, reason: 'network_error', detail: String(err?.message || err), origin: meta.origin || 'unknown' };
+  }
+}
+
 async function requestLovableRefresh(requestedAccountId) {
   const accountId = await resolveAccountId('lovable', requestedAccountId);
   if (!accountId) return { ok: false, reason: 'no_active_account' };
 
+  const pollResult = await pollLovable(accountId, { origin: 'manual' });
+  if (pollResult.ok) return { ...pollResult, accountId, mode: 'active_poll' };
+
   broadcastToTabs('https://lovable.dev/*', { type: 'LOVABLE_FORCE_REFRESH', accountId });
   broadcastToTabs('https://*.lovable.dev/*', { type: 'LOVABLE_FORCE_REFRESH', accountId });
 
-  return { ok: true, accountId, mode: 'passive_triggered' };
+  return { ok: true, accountId, mode: 'passive_triggered', reason: pollResult.reason || null };
 }
 
 // -------- Handlers --------
@@ -443,9 +600,29 @@ async function handleClaudeUsage(providerId, data) {
   if (analysis.ready) await checkClaudeAlerts(providerId, snap, analysis);
 }
 
+function mergeLovableUsageWithLatest(latest, data) {
+  if (!latest || !data || typeof data !== 'object') return data;
+  const fields = [
+    'ws_id', 'ws_name',
+    'daily_used', 'daily_total', 'daily_reset_at',
+    'monthly_used', 'monthly_total', 'monthly_reset_at',
+    'cloud_used', 'cloud_total',
+    'ai_used', 'ai_total'
+  ];
+  const merged = { ...data };
+  for (const field of fields) {
+    if (merged[field] === null || merged[field] === undefined) {
+      merged[field] = latest[field] ?? null;
+    }
+  }
+  return merged;
+}
+
 async function handleLovableUsage(providerId, data) {
-  const snap = normalizeLovableSnapshot(data, providerId);
-  if (!snap) return;
+  const existingSnapshots = await getSnapshots(providerId);
+  const latest = existingSnapshots[existingSnapshots.length - 1] || null;
+  const snap = normalizeLovableSnapshot(mergeLovableUsageWithLatest(latest, data), providerId);
+  if (!snap) return false;
 
   await pushSnapshot(providerId, snap);
   const snapshots = await getSnapshots(providerId);
@@ -462,6 +639,7 @@ async function handleLovableUsage(providerId, data) {
   broadcastToTabs('https://*.lovable.dev/*', payload);
 
   if (analysis.ready) await checkLovableAlerts(providerId, analysis);
+  return true;
 }
 
 // -------- Broadcast helper --------

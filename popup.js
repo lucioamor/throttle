@@ -19,6 +19,7 @@ let footerState = null;
 let accountsSignature = '';
 
 (async function init() {
+  activeProvider = await inferProviderFromActiveTab();
   await renderTabs();
   wireTabSwitcher();
   wireEvents();
@@ -30,6 +31,17 @@ let accountsSignature = '';
 })();
 
 // -------- Tab switcher --------
+
+async function inferProviderFromActiveTab() {
+  try {
+    if (!chrome?.tabs?.query) return activeProvider;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const url = typeof tab?.url === 'string' ? tab.url : '';
+    if (url.startsWith('https://lovable.dev/') || /^https:\/\/[^/]+\.lovable\.dev\//.test(url)) return 'lovable';
+    if (url.startsWith('https://claude.ai/')) return 'claude';
+  } catch (_err) {}
+  return activeProvider;
+}
 
 async function renderTabs() {
   document.querySelectorAll('.provider-tab').forEach(t => {
@@ -528,14 +540,17 @@ function renderLovablePanel(a) {
   const dotsEl = document.getElementById('lv-daily-dots');
   dotsEl.innerHTML = '';
   const total = a.dailyTotal || 5;
-  const used  = total - (a.dailyRemaining ?? 0);
+  const remaining = Number.isFinite(a.dailyRemaining) ? a.dailyRemaining : null;
+  const used  = remaining === null ? total : Math.ceil(Math.max(0, total - remaining));
+  const dailyLevel = lovableDailyLevel(remaining);
   for (let i = 0; i < total; i++) {
     const dot = document.createElement('div');
     dot.className = 'lv-dot ' + (i < used ? 'used' : 'avail');
+    if (i >= used) dot.dataset.level = dailyLevel;
     dotsEl.appendChild(dot);
   }
-  document.getElementById('lv-daily-text').textContent =
-    `${a.dailyRemaining ?? '—'} de ${total} restantes · reset ${formatETA(a.minutesToDailyReset)}`;
+  document.getElementById('lv-daily-text').innerHTML =
+    `<span class="lv-daily-remaining" data-level="${dailyLevel}">${formatLovableCredits(remaining)}</span> de ${formatLovableCredits(total)} restantes · reset ${formatETA(a.minutesToDailyReset)}`;
 
   // MONTHLY BURN
   const monthFill  = document.getElementById('lv-monthly-fill');
@@ -574,6 +589,18 @@ function renderLovablePanel(a) {
       document.getElementById('lv-ai-sub').textContent = `${a.aiUsed.toFixed(2)} / ${a.aiTotal.toFixed(2)}`;
     }
   } else { aiWrap.style.display = 'none'; }
+}
+
+function lovableDailyLevel(remaining) {
+  if (!Number.isFinite(remaining)) return 'red';
+  if (remaining >= 4) return 'blue';
+  if (remaining >= 3) return 'green';
+  if (remaining >= 2) return 'yellow';
+  return 'red';
+}
+
+function formatLovableCredits(value) {
+  return Number.isFinite(value) ? value.toFixed(1) : '—';
 }
 
 // -------- Heatmap (Claude only) --------

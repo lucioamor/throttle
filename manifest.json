@@ -5,6 +5,7 @@
   "version": "2.0.0",
   "description": "Pace control for AI limits. Real-time quota intelligence for Claude and Lovable.",
   "permissions": [
+    "activeTab",
     "storage",
     "alarms",
     "notifications",

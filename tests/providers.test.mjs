@@ -14,7 +14,8 @@ import {
   isValidLovableWorkspaceId,
   providerIdFromWorkspaceId,
   workspaceIdFromProviderId,
-  normalizeLovableSnapshot
+  normalizeLovableSnapshot,
+  normalizeLovableApiPayload
 } from '../lib/providers/lovable.js';
 
 test('Claude provider id helpers validate and map values', () => {
@@ -120,4 +121,48 @@ test('normalizeLovableSnapshot resolves workspace fallback', () => {
   assert.equal(snap.daily_used, 2);
   assert.equal(snap.daily_total, 5);
   assert.equal(snap.daily_reset_at, '2026-04-23T00:00:00.000Z');
+});
+
+test('normalizeLovableApiPayload extracts workspace list responses', () => {
+  const snaps = normalizeLovableApiPayload({
+    url: 'https://api.lovable.dev/user/workspaces',
+    body: {
+      data: {
+        workspaces: [
+          {
+            id: 'ws_alpha-123',
+            name: 'Alpha',
+            daily_credits_used: 2,
+            daily_credits_limit: 5,
+            billing_period_credits_used: 40,
+            billing_period_credits_limit: 100,
+            billing_period_end_date: '2026-05-01T00:00:00Z'
+          }
+        ]
+      }
+    }
+  });
+
+  assert.equal(snaps.length, 1);
+  assert.equal(snaps[0].ws_id, 'ws_alpha-123');
+  assert.equal(snaps[0].ws_name, 'Alpha');
+  assert.equal(snaps[0].daily_used, 2);
+  assert.equal(snaps[0].monthly_total, 100);
+});
+
+test('normalizeLovableApiPayload extracts monthly cloud usage endpoint responses', () => {
+  const snaps = normalizeLovableApiPayload({
+    url: 'https://api.lovable.dev/workspaces/ws_alpha-123/lovable-cloud-monthly-usage',
+    body: {
+      cloud_usage: { used: 4.5, free: 10 },
+      ai_gateway_usage: { used: 1.25, free: 5 }
+    }
+  });
+
+  assert.equal(snaps.length, 1);
+  assert.equal(snaps[0].ws_id, 'ws_alpha-123');
+  assert.equal(snaps[0].cloud_used, 4.5);
+  assert.equal(snaps[0].cloud_total, 10);
+  assert.equal(snaps[0].ai_used, 1.25);
+  assert.equal(snaps[0].ai_total, 5);
 });
