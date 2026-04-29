@@ -32,6 +32,7 @@ import {
 } from './lib/providers/lovable.js';
 
 const ALARM_NAME = 'throttle-fallback-poll';
+const ACTION_ICON_ALARM_NAME = 'throttle-action-icon-refresh';
 const STALE_MS = 4 * 60 * 60 * 1000;
 const KNOWN_PROVIDERS = new Set(['claude', 'lovable']);
 const ACTION_ICON_SIZES = [16, 32];
@@ -49,22 +50,61 @@ const ACTION_ICON_GLYPHS = Object.freeze({
   '9': ['111', '101', '111', '001', '111'],
   '-': ['000', '000', '111', '000', '000']
 });
+const ACTION_ICON_BADGE_GLYPHS = Object.freeze({
+  '0': ['1111', '1001', '1001', '1001', '1001', '1111'],
+  '1': ['0110', '1110', '0110', '0110', '0110', '1111'],
+  '2': ['1111', '0001', '1111', '1000', '1000', '1111'],
+  '3': ['1111', '0001', '1111', '0001', '0001', '1111'],
+  '4': ['1001', '1001', '1111', '0001', '0001', '0001'],
+  '5': ['1111', '1000', '1111', '0001', '0001', '1111'],
+  '6': ['1111', '1000', '1111', '1001', '1001', '1111'],
+  '7': ['1111', '0001', '0010', '0010', '0100', '0100'],
+  '8': ['1111', '1001', '1111', '1001', '1001', '1111'],
+  '9': ['1111', '1001', '1001', '1111', '0001', '1111'],
+  'm': ['0000', '0000', '1110', '1111', '1011', '1011']
+});
 let lastActionIconKey = '';
 let lastLovableAuthToken = null;
 let lastLovableTokenPollAt = 0;
 const LOVABLE_TOKEN_POLL_COOLDOWN_MS = 60 * 1000;
+
+function isClaude5hLockedModel(model) {
+  return model?.provider === 'claude'
+    && (model?.uiState === 'locked_5h' || model?.lockedKind === 'window');
+}
+
+function isClaude5hLockedAnalysis(analysis) {
+  return analysis?.provider === 'claude'
+    && (analysis?.uiState === 'locked_5h' || analysis?.lockOverlay?.kind === 'window');
+}
+
+function formatToolbarMinutes(minutes) {
+  if (!Number.isFinite(minutes)) return '';
+  return `${Math.max(1, Math.min(300, Math.ceil(minutes)))}m`;
+}
+
+function formatResetCountdown(minutes) {
+  if (!Number.isFinite(minutes)) return '—';
+  const totalMinutes = Math.max(0, Math.ceil(minutes));
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (hours <= 0) return `${mins}m`;
+  return `${hours}h${String(mins).padStart(2, '0')}m`;
+}
 
 // -------- Lifecycle --------
 
 chrome.runtime.onInstalled.addListener(async () => {
   const s = await getSettings();
   await setupAlarm(s.activePollSeconds);
+  await setupActionIconAlarm();
   await refreshActionIcon();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   const s = await getSettings();
   await setupAlarm(s.activePollSeconds);
+  await setupActionIconAlarm();
   await refreshActionIcon();
 });
 
@@ -83,9 +123,19 @@ async function setupAlarm(intervalSec) {
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: minutes, delayInMinutes: 0.1 });
 }
 
+async function setupActionIconAlarm() {
+  await chrome.alarms.clear(ACTION_ICON_ALARM_NAME);
+  await chrome.alarms.create(ACTION_ICON_ALARM_NAME, { periodInMinutes: 1, delayInMinutes: 1 });
+}
+
 // -------- Alarm: fallback poll --------
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === ACTION_ICON_ALARM_NAME) {
+    await refreshActionIcon();
+    return;
+  }
+
   if (alarm.name !== ALARM_NAME) return;
 
   const settings = await getSettings();
@@ -110,6 +160,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
     await checkStale(lovableId, snaps, 'Lovable');
   }
+
+  await refreshActionIcon();
 });
 
 async function checkStale(providerId, snaps, providerLabel) {
@@ -232,9 +284,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
           const providerId = providerIdFromWorkspaceId(wsId);
-          await upsertAccount(providerId, {
-            label: typeof safeMsg.wsName === 'string' && safeMsg.wsName.trim() ? safeMsg.wsName.trim() : `WS ${wsId.slice(0, 8)}`
-          });
+          await upsertLovableAccount(providerId, wsId, safeMsg.wsName);
           const promoteSender = await shouldPromoteSenderAsActive(sender);
           const active = await getActiveProviderId('lovable');
           if (!active || promoteSender) await setActiveProviderId('lovable', providerId);
@@ -330,6 +380,25 @@ function inferProviderFromAccountId(accountId) {
 async function resolveAccountId(provider, requestedAccountId) {
   if (typeof requestedAccountId === 'string' && requestedAccountId.startsWith(`${provider}:`)) return requestedAccountId;
   return getActiveProviderId(provider);
+}
+
+async function upsertLovableAccount(providerId, wsId, wsName) {
+  const cleanName = typeof wsName === 'string' && wsName.trim()
+    ? wsName.trim()
+    : null;
+  const existing = await getAccount(providerId);
+  const meta = {};
+
+  if (cleanName) {
+    if (existing?.label === cleanName) return existing;
+    meta.label = cleanName;
+  } else if (!existing) {
+    meta.label = `WS ${wsId.slice(0, 8)}`;
+  } else {
+    return existing;
+  }
+
+  return upsertAccount(providerId, meta);
 }
 
 async function ensureClaudeAccountDiscovered(providerId) {
@@ -485,9 +554,7 @@ async function handleLovableApiData(apiData, sender = null) {
     if (!isValidLovableWorkspaceId(wsId)) continue;
 
     const providerId = providerIdFromWorkspaceId(wsId);
-    await upsertAccount(providerId, {
-      label: typeof data.ws_name === 'string' && data.ws_name.trim() ? data.ws_name.trim() : `WS ${wsId.slice(0, 8)}`
-    });
+    await upsertLovableAccount(providerId, wsId, data.ws_name);
 
     const active = await getActiveProviderId('lovable');
     if (!active || shouldPromotePayload) await setActiveProviderId('lovable', providerId);
@@ -695,12 +762,17 @@ async function refreshActionIcon() {
       return;
     }
 
-    readyCandidates.sort((a, b) => {
-      const aTs = Number.isFinite(a?.latest?.t) ? a.latest.t : 0;
-      const bTs = Number.isFinite(b?.latest?.t) ? b.latest.t : 0;
-      return bTs - aTs;
-    });
-    await updateActionIconFromAnalysis(readyCandidates[0]);
+    const lockedClaude = readyCandidates.find(isClaude5hLockedAnalysis);
+    if (lockedClaude) {
+      await updateActionIconFromAnalysis(lockedClaude);
+    } else {
+      readyCandidates.sort((a, b) => {
+        const aTs = Number.isFinite(a?.latest?.t) ? a.latest.t : 0;
+        const bTs = Number.isFinite(b?.latest?.t) ? b.latest.t : 0;
+        return bTs - aTs;
+      });
+      await updateActionIconFromAnalysis(readyCandidates[0]);
+    }
   } catch (err) {
     console.warn('[Throttle] icon refresh failed:', err?.message || err);
     await setDefaultActionIcon();
@@ -715,7 +787,10 @@ async function updateActionIconFromAnalysis(analysis) {
 
   const model = buildActionIconModel(analysis);
   const key = actionIconModelKey(model);
-  if (key === lastActionIconKey) return;
+  if (key === lastActionIconKey) {
+    await updateActionBadgeFromModel(model);
+    return;
+  }
 
   const imageData = buildActionIconImageData(model);
   if (!imageData) {
@@ -724,6 +799,7 @@ async function updateActionIconFromAnalysis(analysis) {
   }
 
   await chrome.action.setIcon({ imageData });
+  await updateActionBadgeFromModel(model);
   lastActionIconKey = key;
 }
 
@@ -739,7 +815,9 @@ function buildActionIconModel(analysis) {
       provider,
       uiState: 'loading',
       pace: null,
-      locked: false
+      locked: false,
+      lockedKind: null,
+      minutesToReset5h: null
     };
   }
 
@@ -748,13 +826,29 @@ function buildActionIconModel(analysis) {
     provider,
     uiState: typeof analysis.uiState === 'string' ? analysis.uiState : 'loading',
     pace: Number.isFinite(rawPace) ? rawPace : null,
-    locked: !!analysis.lockOverlay?.active
+    locked: !!analysis.lockOverlay?.active,
+    lockedKind: analysis.lockOverlay?.kind || null,
+    minutesToReset5h: Number.isFinite(analysis.minutesToReset5h) ? analysis.minutesToReset5h : null
   };
 }
 
 function actionIconModelKey(model) {
   const roundedPace = model.pace === null ? 'na' : String(Math.round(model.pace));
-  return `${model.provider}|${model.uiState}|${model.locked ? '1' : '0'}|${roundedPace}`;
+  const resetMinute = Number.isFinite(model.minutesToReset5h) ? Math.ceil(model.minutesToReset5h) : 'na';
+  return `${model.provider}|${model.uiState}|${model.locked ? '1' : '0'}|${model.lockedKind || 'none'}|${roundedPace}|${resetMinute}`;
+}
+
+async function updateActionBadgeFromModel(model) {
+  if (isClaude5hLockedModel(model)) {
+    await chrome.action.setBadgeText({ text: '' });
+    await chrome.action.setTitle({
+      title: `Throttle - Claude 5h esgotada. Reset em ${formatResetCountdown(model.minutesToReset5h)}`
+    });
+    return;
+  }
+
+  await chrome.action.setBadgeText({ text: '' });
+  await chrome.action.setTitle({ title: 'Throttle - Pace control for AI limits' });
 }
 
 function buildActionIconImageData(model) {
@@ -777,7 +871,11 @@ function renderSpeedometerIcon(size, model) {
 
   const uiState = model.uiState || 'loading';
   const highRisk = isHighRiskIconState(uiState, model.locked);
+  const locked5h = isClaude5hLockedModel(model);
   const paceLabel = formatActionIconLabel(model, uiState);
+  if (locked5h) {
+    return renderHourglassIcon(ctx, size, formatToolbarMinutes(model.minutesToReset5h));
+  }
 
   // Split icon into two zones:
   // top => speedometer; bottom => numeric digits.
@@ -852,6 +950,197 @@ function renderSpeedometerIcon(size, model) {
   return ctx.getImageData(0, 0, size, size);
 }
 
+function renderHourglassIcon(ctx, size, badgeText = '') {
+  const scale = size / 16;
+  const top = Math.max(1.5, size * 0.12);
+  const bottom = size - top;
+  const left = Math.max(2, size * 0.2);
+  const right = size - left;
+  const cx = size / 2;
+  const midY = size / 2;
+  const neckHalf = Math.max(0.8, size * 0.055);
+  const stroke = Math.max(1.15, size * 0.08);
+  const rimStroke = Math.max(1.2, size * 0.095);
+
+  // Tiny soft shadow keeps the silhouette readable on light and dark themes.
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = rimStroke + Math.max(0.4, 0.55 * scale);
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(right, top);
+  ctx.moveTo(left, bottom);
+  ctx.lineTo(right, bottom);
+  ctx.moveTo(left + stroke * 0.25, top + stroke * 0.55);
+  ctx.lineTo(cx - neckHalf, midY);
+  ctx.lineTo(left + stroke * 0.25, bottom - stroke * 0.55);
+  ctx.moveTo(right - stroke * 0.25, top + stroke * 0.55);
+  ctx.lineTo(cx + neckHalf, midY);
+  ctx.lineTo(right - stroke * 0.25, bottom - stroke * 0.55);
+  ctx.stroke();
+
+  // Glass body, based on a compact classic hourglass icon.
+  ctx.strokeStyle = '#dbeafe';
+  ctx.lineWidth = rimStroke;
+  ctx.globalAlpha = 0.98;
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(right, top);
+  ctx.moveTo(left, bottom);
+  ctx.lineTo(right, bottom);
+  ctx.moveTo(left + stroke * 0.25, top + stroke * 0.55);
+  ctx.lineTo(cx - neckHalf, midY);
+  ctx.lineTo(left + stroke * 0.25, bottom - stroke * 0.55);
+  ctx.moveTo(right - stroke * 0.25, top + stroke * 0.55);
+  ctx.lineTo(cx + neckHalf, midY);
+  ctx.lineTo(right - stroke * 0.25, bottom - stroke * 0.55);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Cool glass tint inside the bulb.
+  const glass = ctx.createLinearGradient(0, top, 0, bottom);
+  glass.addColorStop(0, 'rgba(96,165,250,0.46)');
+  glass.addColorStop(0.5, 'rgba(219,234,254,0.16)');
+  glass.addColorStop(1, 'rgba(96,165,250,0.42)');
+  ctx.fillStyle = glass;
+  ctx.beginPath();
+  ctx.moveTo(left + stroke * 0.85, top + stroke * 1.05);
+  ctx.lineTo(right - stroke * 0.85, top + stroke * 1.05);
+  ctx.lineTo(cx + neckHalf * 0.65, midY - stroke * 0.15);
+  ctx.lineTo(cx - neckHalf * 0.65, midY - stroke * 0.15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(cx - neckHalf * 0.65, midY + stroke * 0.15);
+  ctx.lineTo(cx + neckHalf * 0.65, midY + stroke * 0.15);
+  ctx.lineTo(right - stroke * 0.85, bottom - stroke * 1.05);
+  ctx.lineTo(left + stroke * 0.85, bottom - stroke * 1.05);
+  ctx.closePath();
+  ctx.fill();
+
+  const sand = '#fbbf24';
+  const sandDark = '#d97706';
+  ctx.fillStyle = sand;
+  ctx.beginPath();
+  ctx.moveTo(left + stroke * 1.2, top + stroke * 1.45);
+  ctx.lineTo(right - stroke * 1.2, top + stroke * 1.45);
+  ctx.lineTo(cx + neckHalf * 0.35, midY - stroke * 0.45);
+  ctx.lineTo(cx - neckHalf * 0.35, midY - stroke * 0.45);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = sandDark;
+  ctx.beginPath();
+  ctx.moveTo(left + stroke * 1.25, bottom - stroke * 1.35);
+  ctx.lineTo(right - stroke * 1.25, bottom - stroke * 1.35);
+  ctx.lineTo(cx + Math.max(1.2, size * 0.12), midY + stroke * 1.15);
+  ctx.lineTo(cx - Math.max(1.2, size * 0.12), midY + stroke * 1.15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = sand;
+  ctx.lineWidth = Math.max(0.8, size * 0.055);
+  ctx.beginPath();
+  ctx.moveTo(cx, midY - stroke * 0.15);
+  ctx.lineTo(cx, midY + stroke * 0.9);
+  ctx.stroke();
+
+  // Small highlight on the upper-left glass edge.
+  ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+  ctx.lineWidth = Math.max(0.65, size * 0.04);
+  ctx.beginPath();
+  ctx.moveTo(left + stroke * 0.95, top + stroke * 1.2);
+  ctx.lineTo(cx - neckHalf * 1.3, midY - stroke * 0.55);
+  ctx.stroke();
+
+  drawActionIconBadgeText(ctx, {
+    text: badgeText,
+    x: 0,
+    y: Math.round(size * 0.64),
+    width: size,
+    height: Math.round(size * 0.36),
+    color: '#ef4444',
+  });
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+// 5-tall × 3-wide pixel font for 0-9 and 'm'. Each glyph is a flat array of
+// 15 bits (row-major, top-to-bottom, left-to-right). 1 = filled pixel.
+const PIXEL_GLYPHS = {
+  '0': [1,1,1, 1,0,1, 1,0,1, 1,0,1, 1,1,1],
+  '1': [0,1,0, 1,1,0, 0,1,0, 0,1,0, 1,1,1],
+  '2': [1,1,1, 0,0,1, 1,1,1, 1,0,0, 1,1,1],
+  '3': [1,1,1, 0,0,1, 0,1,1, 0,0,1, 1,1,1],
+  '4': [1,0,1, 1,0,1, 1,1,1, 0,0,1, 0,0,1],
+  '5': [1,1,1, 1,0,0, 1,1,1, 0,0,1, 1,1,1],
+  '6': [1,1,1, 1,0,0, 1,1,1, 1,0,1, 1,1,1],
+  '7': [1,1,1, 0,0,1, 0,1,0, 0,1,0, 0,1,0],
+  '8': [1,1,1, 1,0,1, 1,1,1, 1,0,1, 1,1,1],
+  '9': [1,1,1, 1,0,1, 1,1,1, 0,0,1, 1,1,1],
+  'm': [0,0,0, 1,0,1, 1,1,1, 1,0,1, 1,0,1],
+};
+
+function drawActionIconBadgeText(ctx, opts) {
+  const text = typeof opts?.text === 'string' && opts.text ? opts.text : '';
+  if (!text) return;
+
+  const canvasW = Number.isFinite(opts?.width) ? opts.width : 16;
+  const regionY = Number.isFinite(opts?.y) ? opts.y : 0;
+  const regionH = Number.isFinite(opts?.height) ? opts.height : 7;
+  const color = opts?.color || '#ef4444';
+
+  // Scale pixel size so glyphs fill ~80% of region height (5 rows).
+  const px = Math.max(1, Math.floor(regionH * 0.8 / 5));
+  const gap = 1; // 1px between glyphs
+  const glyphW = 3 * px;
+  const glyphH = 5 * px;
+
+  const chars = text.split('').filter(c => PIXEL_GLYPHS[c]);
+  const totalW = chars.length * glyphW + Math.max(0, chars.length - 1) * gap;
+  let drawX = Math.round((canvasW - totalW) / 2);
+  // Vertically center in region, nudge 1px down for visual weight
+  const drawY = Math.round(regionY + (regionH - glyphH) / 2) + 1;
+
+  ctx.save();
+  ctx.fillStyle = color;
+
+  // Thin dark halo for readability — paint shadow pixels first
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  for (const ch of chars) {
+    const bits = PIXEL_GLYPHS[ch];
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 3; c++) {
+        if (!bits[r * 3 + c]) continue;
+        const bx = drawX + c * px;
+        const by = drawY + r * px;
+        ctx.fillRect(bx - 1, by - 1, px + 2, px + 2);
+      }
+    }
+    drawX += glyphW + gap;
+  }
+
+  // Reset drawX, paint foreground pixels
+  drawX = Math.round((canvasW - totalW) / 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = color;
+  for (const ch of chars) {
+    const bits = PIXEL_GLYPHS[ch];
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 3; c++) {
+        if (!bits[r * 3 + c]) continue;
+        ctx.fillRect(drawX + c * px, drawY + r * px, px, px);
+      }
+    }
+    drawX += glyphW + gap;
+  }
+
+  ctx.restore();
+}
+
 function drawIconArc(ctx, cx, cy, radius, fromPace, toPace, color) {
   const from = paceToTopArcRad(fromPace);
   const to = paceToTopArcRad(toPace);
@@ -905,7 +1194,7 @@ function drawActionIconDigits(ctx, opts) {
   }
 }
 
-function drawActionIconGlyph(ctx, glyph, x, y, pixel, color) {
+function drawActionIconGlyph(ctx, glyph, x, y, pixel, color, includeBuiltInShadow = true) {
   if (!Array.isArray(glyph)) return;
   for (let row = 0; row < glyph.length; row++) {
     const rowBits = glyph[row];
@@ -914,8 +1203,10 @@ function drawActionIconGlyph(ctx, glyph, x, y, pixel, color) {
       if (rowBits[col] !== '1') continue;
       const px = x + col * pixel;
       const py = y + row * pixel;
-      ctx.fillStyle = 'rgba(0,0,0,0.42)';
-      ctx.fillRect(px, py + 1, pixel, pixel);
+      if (includeBuiltInShadow) {
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.fillRect(px, py + 1, pixel, pixel);
+      }
       ctx.fillStyle = color;
       ctx.fillRect(px, py, pixel, pixel);
     }
@@ -930,6 +1221,8 @@ async function setDefaultActionIcon() {
       128: 'icons/icon128.png'
     }
   });
+  await chrome.action.setBadgeText({ text: '' });
+  await chrome.action.setTitle({ title: 'Throttle - Pace control for AI limits' });
   lastActionIconKey = 'default';
 }
 

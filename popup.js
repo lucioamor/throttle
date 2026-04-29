@@ -18,6 +18,22 @@ let footerTimer = null;
 let footerState = null;
 let accountsSignature = '';
 
+function isClaude5hLocked(analysis) {
+  if (analysis?.provider !== 'claude') return false;
+  if (analysis?.uiState === 'locked_5h' || analysis?.lockOverlay?.kind === 'window') return true;
+  const u5h = Number.isFinite(analysis?.latest?.u5h) ? analysis.latest.u5h : null;
+  return u5h !== null && u5h >= 99.5;
+}
+
+function formatResetCountdown(minutes) {
+  if (minutes === null || minutes === undefined || !Number.isFinite(minutes) || minutes < 0) return '—';
+  const totalMinutes = Math.max(0, Math.ceil(minutes));
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h <= 0) return `${m}m`;
+  return `${h}h${String(m).padStart(2, '0')}m`;
+}
+
 (async function init() {
   activeProvider = await inferProviderFromActiveTab();
   await renderTabs();
@@ -73,7 +89,7 @@ async function populateAccounts() {
 
   const entries = Object.values(accounts);
   const signature = entries
-    .map((acc) => `${acc.providerId}|${acc.label || ''}|${acc.plan || ''}`)
+    .map((acc) => acc.providerId)
     .sort()
     .join(';;') + `::${activeProvider}::${active || ''}::${currentAccountId || ''}`;
   if (signature === accountsSignature) {
@@ -82,6 +98,7 @@ async function populateAccounts() {
     } else if (!entries.some((acc) => acc.providerId === currentAccountId)) {
       currentAccountId = entries.some((acc) => acc.providerId === active) ? active : entries[0].providerId;
     }
+    updateAccountOptionLabels(select, entries);
     return false;
   }
   accountsSignature = signature;
@@ -101,11 +118,7 @@ async function populateAccounts() {
     return true;
   }
 
-  const labelCount = new Map();
-  for (const acc of entries) {
-    const key = acc.label || acc.providerId;
-    labelCount.set(key, (labelCount.get(key) || 0) + 1);
-  }
+  const labelCount = buildLabelCount(entries);
 
   for (const acc of entries) {
     const opt = document.createElement('option');
@@ -127,6 +140,31 @@ async function populateAccounts() {
 
   return true;
 }
+
+function buildLabelCount(entries) {
+  const labelCount = new Map();
+  for (const acc of entries) {
+    const key = acc.label || acc.providerId;
+    labelCount.set(key, (labelCount.get(key) || 0) + 1);
+  }
+  return labelCount;
+}
+
+function formatAccountOptionLabel(acc, labelCount) {
+  const baseLabel = acc.label || acc.providerId;
+  const shouldDisambiguate = (labelCount.get(baseLabel) || 0) > 1;
+  const suffix = shouldDisambiguate ? ` · ${shortProviderSuffix(acc.providerId)}` : '';
+  return baseLabel + suffix + (acc.plan && acc.plan !== 'unknown' ? ` [${acc.plan}]` : '');
+}
+
+function updateAccountOptionLabels(select, entries) {
+  const labelCount = buildLabelCount(entries);
+  for (const acc of entries) {
+    const option = [...select.options].find((opt) => opt.value === acc.providerId);
+    if (option) option.textContent = formatAccountOptionLabel(acc, labelCount);
+  }
+}
+
 function shortProviderSuffix(providerId) {
   if (typeof providerId !== 'string') return 'id';
   const idx = providerId.indexOf(':');
@@ -144,7 +182,14 @@ function getPopupCreditsRemaining(analysis) {
   }
 
   if (analysis.provider === 'lovable') {
-    return Number.isFinite(analysis?.monthlyRemaining) ? analysis.monthlyRemaining : null;
+    const dailyRemaining = Number.isFinite(analysis?.dailyRemaining) ? analysis.dailyRemaining : null;
+    const monthlyRemaining = Number.isFinite(analysis?.monthlyRemaining) ? analysis.monthlyRemaining : null;
+    if (dailyRemaining !== null && dailyRemaining > 0) return dailyRemaining;
+    if (monthlyRemaining !== null && monthlyRemaining > 0) return monthlyRemaining;
+    if (dailyRemaining !== null || monthlyRemaining !== null) {
+      return (dailyRemaining ?? 0) + (monthlyRemaining ?? 0);
+    }
+    return null;
   }
 
   return null;
@@ -152,6 +197,19 @@ function getPopupCreditsRemaining(analysis) {
 
 function resolvePopupLockOverlay(analysis) {
   const creditsRemaining = getPopupCreditsRemaining(analysis);
+  if (analysis?.provider === 'claude' && isClaude5hLocked(analysis)) {
+    const base = analysis?.lockOverlay && typeof analysis.lockOverlay === 'object'
+      ? analysis.lockOverlay
+      : {};
+    return {
+      active: true,
+      kind: 'window',
+      icon: base.icon || '⏳',
+      title: base.title || 'Janela 5h esgotada',
+      detail: base.detail || `reset ${formatResetCountdown(analysis.minutesToReset5h)}`
+    };
+  }
+
   if (creditsRemaining === null || creditsRemaining > 0) {
     return { active: false, kind: null, icon: '', title: '', detail: '' };
   }
@@ -329,10 +387,10 @@ function colorForClaude5h(u5h, uiState, lockOverlay) {
   if (lockOverlay?.kind === 'monthly') return '#52525b';
   if (lockOverlay?.kind === 'window' || lockOverlay?.active) return '#ef4444';
   if (Number.isFinite(u5h)) {
-    if (u5h >= 95) return '#ef4444';
-    if (u5h >= 80) return '#eab308';
+    if (u5h >= 90) return '#ef4444';
+    if (u5h >= 70) return '#eab308';
   }
-  return barColorFromUiState(uiState, false);
+  return '#22c55e';
 }
 
 function setNeedleToZero(needle) {
@@ -436,8 +494,14 @@ function renderClaudeStats(a) {
   const reset5h = document.getElementById('stat-5h-reset');
   const eta15 = document.getElementById('stat-5h-eta15');
   const eta60 = document.getElementById('stat-5h-eta60');
+  const etaRow = document.getElementById('stat-5h-eta-row');
   const stat5hWrap = document.getElementById('stat-5h-wrap');
   if (stat5hWrap) stat5hWrap.classList.toggle('stat-disabled', lockOverlay.kind === 'monthly');
+  const locked5h = isClaude5hLocked(a);
+  if (etaRow) {
+    etaRow.hidden = locked5h;
+    etaRow.style.display = locked5h ? 'none' : '';
+  }
 
   if (uiState === 'loading') {
     fill5h.style.width = '100%';
@@ -450,16 +514,18 @@ function renderClaudeStats(a) {
     fill5h.style.width = '0%';
     fill5h.style.background = colorForClaude5h(0, uiState, lockOverlay);
     pct5h.textContent = '0%';
-    reset5h.textContent = `reset ${formatETA(a.minutesToReset5h)}`;
+    reset5h.textContent = `reset ${formatResetCountdown(a.minutesToReset5h)}`;
     eta15.textContent = '—';
     eta60.textContent = '—';
   } else if (l.u5h !== null) {
     fill5h.style.width  = `${Math.min(l.u5h, 100)}%`;
     fill5h.style.background = colorForClaude5h(l.u5h, uiState, lockOverlay);
     pct5h.textContent = `${l.u5h.toFixed(1)}%`;
-    reset5h.textContent = `reset ${formatETA(a.minutesToReset5h)}`;
-    eta15.textContent = formatETA(a.eta15);
-    eta60.textContent = formatETA(a.eta60);
+    reset5h.textContent = locked5h
+      ? `volta em ${formatResetCountdown(a.minutesToReset5h)}`
+      : `reset ${formatResetCountdown(a.minutesToReset5h)}`;
+    eta15.textContent = locked5h ? '—' : formatETA(a.eta15);
+    eta60.textContent = locked5h ? '—' : formatETA(a.eta60);
   } else {
     fill5h.style.width = '0%';
     fill5h.style.background = '#52525b';
@@ -476,7 +542,7 @@ function renderClaudeStats(a) {
       mask7d.style.left = `${pct7d}%`;
     }
     document.getElementById('stat-7d-pct').textContent   = `${l.u7d.toFixed(1)}%`;
-    document.getElementById('stat-7d-reset').textContent = `reset ${formatETA(a.minutesToReset7d)}`;
+    document.getElementById('stat-7d-reset').textContent = `reset ${formatResetCountdown(a.minutesToReset7d)}`;
   }
 
   if (l.extra_used !== null && l.extra_limit) {

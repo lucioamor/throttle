@@ -115,7 +115,7 @@ test('analyze does not report zero pace when 5h window is exhausted', () => {
   assert.equal(result.lockOverlay.active, true);
   assert.equal(result.lockOverlay.kind, 'window');
   assert.equal(result.lockOverlay.icon, '⏳');
-  assert.ok(/\d{2}:\d{2}:\d{2}/.test(result.lockOverlay.detail));
+  assert.match(result.lockOverlay.detail, /reset \d+h\d{2}m/);
 });
 
 test('analyze anchors pace to credits remaining until reset', () => {
@@ -131,6 +131,22 @@ test('analyze anchors pace to credits remaining until reset', () => {
   assert.equal(result.ready, true);
   assert.equal(result.dynamicIdealRate, 40 / 120);
   assert.equal(result.rpmBlend, 100);
+});
+
+test('analyze exposes the most urgent 5h ETA before reset', () => {
+  const now = Date.now();
+  const reset5h = new Date(now + 204 * 60 * 1000).toISOString();
+  const reset7d = new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString();
+  const snaps = [
+    { t: now - 15 * 60 * 1000, u5h: 84, u7d: 10, reset5h, reset7d },
+    { t: now, u5h: 96, u7d: 11, reset5h, reset7d }
+  ];
+
+  const result = analyze(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(Math.round(result.etaToLimit5h), 5);
+  assert.equal(result.status, 'red');
+  assert.match(result.statusReason, /5min/);
 });
 
 test('analyze returns a smooth sparkline series', () => {
@@ -256,6 +272,50 @@ test('analyzeLovable exposes monthly lock overlay when cycle is exhausted', () =
   const snaps = [
     {
       t: now - 60 * 60 * 1000,
+      daily_used: 5,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 100,
+      monthly_total: 100,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      cloud_used: 1,
+      cloud_total: 10,
+      ai_used: 1,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    },
+    {
+      t: now,
+      daily_used: 5,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 100,
+      monthly_total: 100,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      cloud_used: 2,
+      cloud_total: 10,
+      ai_used: 2,
+      ai_total: 10,
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    }
+  ];
+
+  const result = analyzeLovable(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.uiState, 'locked_monthly');
+  assert.equal(result.lockOverlay.active, true);
+  assert.equal(result.lockOverlay.kind, 'monthly');
+  assert.equal(result.lockOverlay.icon, '🔒');
+  assert.ok(result.lockOverlay.detail.includes('/'));
+});
+
+test('analyzeLovable stays usable when monthly credits are exhausted but daily free credits remain', () => {
+  const now = Date.now();
+  const snaps = [
+    {
+      t: now - 60 * 60 * 1000,
       daily_used: 1,
       daily_total: 5,
       daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
@@ -288,11 +348,45 @@ test('analyzeLovable exposes monthly lock overlay when cycle is exhausted', () =
 
   const result = analyzeLovable(snaps);
   assert.equal(result.ready, true);
+  assert.notEqual(result.uiState, 'locked_monthly');
+  assert.equal(result.lockOverlay.active, false);
+  assert.equal(result.dailyRemaining, 3);
+  assert.equal(result.monthlyRemaining, 0);
+});
+
+test('analyzeLovable locks when daily free credits and monthly credits are both zero', () => {
+  const now = Date.now();
+  const snaps = [
+    {
+      t: now - 60 * 60 * 1000,
+      daily_used: 5,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 0,
+      monthly_total: 0,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    },
+    {
+      t: now,
+      daily_used: 5,
+      daily_total: 5,
+      daily_reset_at: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+      monthly_used: 0,
+      monthly_total: 0,
+      monthly_reset_at: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      ws_name: 'ws',
+      ws_id: 'ws1'
+    }
+  ];
+
+  const result = analyzeLovable(snaps);
+  assert.equal(result.ready, true);
+  assert.equal(result.dailyRemaining, 0);
+  assert.equal(result.monthlyRemaining, 0);
   assert.equal(result.uiState, 'locked_monthly');
   assert.equal(result.lockOverlay.active, true);
-  assert.equal(result.lockOverlay.kind, 'monthly');
-  assert.equal(result.lockOverlay.icon, '🔒');
-  assert.ok(result.lockOverlay.detail.includes('/'));
 });
 
 test('analyzeLovable exposes loading message for mini-badge', () => {
@@ -413,6 +507,19 @@ test('resolveUiState returns locked_monthly when monthly credits are exhausted',
     recentUsagePct: 50
   });
   assert.equal(uiState, 'locked_monthly');
+});
+
+test('resolveUiState does not lock Lovable when daily free credits remain', () => {
+  const uiState = resolveUiState({
+    hasDailyQuota: true,
+    dailyCreditsRemaining: 1,
+    hasMonthlyQuota: true,
+    monthlyCreditsRemaining: 0,
+    window5hExhausted: false,
+    hasPaceData: true,
+    recentUsagePct: 50
+  });
+  assert.equal(uiState, 'attention');
 });
 
 test('resolveUiState returns locked_5h when 5h window is exhausted', () => {

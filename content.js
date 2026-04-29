@@ -130,12 +130,25 @@
           height: 100%;
           flex-shrink: 0;
         }
+        .usage-seg {
+          padding-left: 4px;
+          padding-right: 10px;
+        }
 
         .divider {
           width: 1px;
           height: 16px;
           background: rgba(255,255,255,0.12);
           flex-shrink: 0;
+        }
+        .weekly-divider {
+          width: 0;
+          opacity: 0;
+          transition: width 0.25s ease, opacity 0.2s ease;
+        }
+        .capsule:hover .weekly-divider {
+          width: 1px;
+          opacity: 1;
         }
 
         /* Mini velocímetro SVG */
@@ -187,6 +200,9 @@
           overflow: hidden;
           flex-shrink: 0;
         }
+        .bar-wrap[data-status="red"] {
+          box-shadow: 0 0 10px rgba(239,68,68,0.55);
+        }
         .bar-fill {
           height: 100%;
           border-radius: 2px;
@@ -199,7 +215,7 @@
           font-size: 12px;
           color: #fafafa;
           min-width: 30px;
-          text-align: right;
+          text-align: left;
         }
 
         /* Texto auxiliar (reset/eta) */
@@ -224,6 +240,20 @@
         .badge-7d[data-risk="low"]    { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); }
         .badge-7d[data-risk="medium"] { background: rgba(234,179,8,0.18);  color: #fbbf24; }
         .badge-7d[data-risk="high"]   { background: rgba(239,68,68,0.22);  color: #f87171; animation: pulse 2s ease-in-out infinite; }
+        .weekly-seg {
+          max-width: 0;
+          opacity: 0;
+          overflow: hidden;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+          transition: max-width 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+        }
+        .capsule:hover .weekly-seg {
+          max-width: 74px;
+          opacity: 1;
+          padding-left: 8px !important;
+          padding-right: 8px !important;
+        }
 
         /* PACE + trend */
         .pace-val {
@@ -234,7 +264,7 @@
           text-align: center;
           transition: color 0.3s ease;
         }
-        .pace-val[data-status="red"]    { color: #f87171; }
+        .pace-val[data-status="red"]    { color: #f87171; text-shadow: 0 0 10px rgba(239,68,68,0.8); animation: pulse 2s ease-in-out infinite; }
         .pace-val[data-status="yellow"] { color: #fbbf24; }
         .pace-val[data-status="blue"]   { color: #60a5fa; }
 
@@ -257,8 +287,11 @@
           transition: max-width 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease;
           font-size: 10px;
           color: rgba(255,255,255,0.55);
-          padding-right: 4px;
+          padding-right: 0;
           flex-shrink: 0;
+        }
+        .capsule:hover .extra {
+          padding-right: 4px;
         }
 
         @keyframes pulse {
@@ -329,28 +362,27 @@
             <circle cx="14" cy="16" r="2.2" fill="#f59e0b"/>
           </svg>
           <span class="pace-val" id="pace-val">—</span>
-          <span class="trend" id="trend-arrow" data-dir="stable">—</span>
           <svg id="sparkline-svg" viewBox="0 0 64 18" aria-label="Curva de consumo">
             <path id="sparkline-track" class="sparkline-track" d="M 1 15 H 63" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.2" stroke-linecap="round"/>
             <path id="sparkline-path" d="" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
             <circle id="sparkline-dot" cx="63" cy="15" r="1.6" fill="#22c55e"/>
           </svg>
+          <span class="trend" id="trend-arrow" data-dir="stable">—</span>
         </div>
 
         <div class="divider"></div>
 
-        <!-- 5H -->
-        <div class="seg">
-          <span class="tag">5H</span>
-          <div class="bar-wrap"><div class="bar-fill" id="fill-5h"></div></div>
+        <!-- Uso -->
+        <div class="seg usage-seg">
+          <div class="bar-wrap" id="bar-5h"><div class="bar-fill" id="fill-5h"></div></div>
           <span class="pct" id="pct-5h">—</span>
           <span class="aux" id="aux-5h">—</span>
         </div>
 
-        <div class="divider"></div>
+        <div class="divider weekly-divider"></div>
 
         <!-- Badge 7D (sempre visível, tamanho mínimo) -->
-        <div class="seg" style="padding: 0 8px;">
+        <div class="seg weekly-seg">
           <span class="badge-7d" id="badge-7d" data-risk="low">7D —</span>
         </div>
 
@@ -422,10 +454,11 @@
   function render(analysis) {
     if (!shadow || !analysis || !analysis.ready) return;
 
-    const { latest, minutesToReset5h, minutesToReset7d, rpmBlend, trend, operationalMsg, eta15 } = analysis;
+    const { latest, minutesToReset5h, minutesToReset7d, rpmBlend, trend, operationalMsg, eta15, etaBlend, eta60 } = analysis;
     const uiState = analysis.uiState || 'loading';
     const lockOverlay = analysis.lockOverlay || { active: false };
     const isLocked = !!lockOverlay.active;
+    const locked5h = uiState === 'locked_5h' || lockOverlay.kind === 'window';
 
     const capsule = shadow.getElementById('capsule');
     const highRisk = isHighRiskUiState(uiState, isLocked);
@@ -469,19 +502,31 @@
     // --- 5H ---
     if (latest.u5h !== null) {
       const fill5h = shadow.getElementById('fill-5h');
+      const bar5h = shadow.getElementById('bar-5h');
       const pct5h = shadow.getElementById('pct-5h');
       const aux5h = shadow.getElementById('aux-5h');
 
-      const color5h = highRisk ? '#ef4444' : (uiState === 'attention' ? '#eab308' : '#22c55e');
+      const barStatus = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : 'green');
+      const color5h = barStatus === 'red' ? '#ef4444' : (barStatus === 'yellow' ? '#eab308' : '#22c55e');
 
       fill5h.style.width = `${Math.min(latest.u5h, 100)}%`;
       fill5h.style.background = color5h;
+      if (bar5h) bar5h.dataset.status = barStatus;
       pct5h.textContent = `${latest.u5h.toFixed(0)}%`;
 
-      // Aux: mostra ETA de esgotamento se em risco, senão mostra reset
-      const inRisk = eta15 !== null && eta15 !== Infinity && minutesToReset5h !== null && eta15 < minutesToReset5h;
-      if (inRisk) {
-        aux5h.textContent = `zera ${fmtMin(eta15)}`;
+      // Aux: mostra ETA de esgotamento se em risco, senao mostra reset
+      const etaToLimit = Number.isFinite(analysis.etaToLimit5h)
+        ? analysis.etaToLimit5h
+        : bestFiniteEta(eta15, etaBlend, eta60);
+      const inRisk = !locked5h
+        && Number.isFinite(etaToLimit)
+        && minutesToReset5h !== null
+        && etaToLimit < minutesToReset5h;
+      if (locked5h) {
+        aux5h.textContent = `reset ${fmtMin(minutesToReset5h)}`;
+        aux5h.dataset.warn = 'true';
+      } else if (inRisk) {
+        aux5h.textContent = `zera em ${fmtMin(etaToLimit)}`;
         aux5h.dataset.warn = 'true';
       } else {
         aux5h.textContent = `reset ${fmtMin(minutesToReset5h)}`;
@@ -516,11 +561,16 @@
 
   function fmtMin(min) {
     if (min === null || min === undefined || !isFinite(min) || min < 0) return '—';
-    const totalMinutes = Math.max(0, Math.round(min));
+    const totalMinutes = Math.max(0, Math.ceil(min));
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
     if (h <= 0) return `${m}m`;
     return `${h}h${String(m).padStart(2, '0')}m`;
+  }
+
+  function bestFiniteEta(...values) {
+    const finite = values.filter((value) => Number.isFinite(value) && value >= 0);
+    return finite.length ? Math.min(...finite) : null;
   }
 
   // -------- Submit observer --------

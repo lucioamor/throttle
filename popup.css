@@ -223,10 +223,10 @@ html, body {
   inset: 0;
   background: linear-gradient(
     90deg,
-    #3b82f6 0%,
-    #3b82f6 35%,
-    #22c55e 60%,
-    #eab308 80%,
+    #22c55e 0%,
+    #22c55e 50%,
+    #eab308 70%,
+    #ef4444 90%,
     #ef4444 100%
   );
 }
@@ -246,6 +246,10 @@ html, body {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
+}
+
+.stat-row[hidden] {
+  display: none !important;
 }
 
 .stat-pct {

@@ -40,8 +40,8 @@ test('normalizeClaudeSnapshot sanitizes values', () => {
   assert.equal(snap.u7d, 0);
   assert.equal(snap.reset5h, '2026-04-22T20:00:00.000Z');
   assert.equal(snap.reset7d, null);
-  assert.equal(snap.extra_used, 10);
-  assert.equal(snap.extra_limit, 20);
+  assert.equal(snap.extra_used, 0.1);
+  assert.equal(snap.extra_limit, 0.2);
   assert.equal(snap.extra_util, 100);
   assert.equal(snap.monthly_exhausted, false);
 });
@@ -165,4 +165,43 @@ test('normalizeLovableApiPayload extracts monthly cloud usage endpoint responses
   assert.equal(snaps[0].cloud_total, 10);
   assert.equal(snaps[0].ai_used, 1.25);
   assert.equal(snaps[0].ai_total, 5);
+});
+
+test('normalizeLovableApiPayload ignores project list responses', () => {
+  const snaps = normalizeLovableApiPayload({
+    url: 'https://api.lovable.dev/workspaces/ws_alpha-123/projects',
+    body: {
+      data: [
+        {
+          id: 'project_slug_like_id',
+          name: 'project-slug',
+          display_name: 'Project Display Name',
+          workspace_id: 'ws_alpha-123',
+          daily_credits_used: 1,
+          daily_credits_limit: 5
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(snaps, []);
+});
+
+test('normalizeLovableApiPayload ignores unrelated data arrays with project-like objects', () => {
+  const snaps = normalizeLovableApiPayload({
+    url: 'https://api.lovable.dev/projects/recent',
+    body: {
+      data: [
+        {
+          id: 'project_slug_like_id',
+          name: 'project-slug',
+          workspace_id: 'ws_alpha-123',
+          billing_period_credits_used: 40,
+          billing_period_credits_limit: 100
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(snaps, []);
 });
