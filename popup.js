@@ -395,7 +395,26 @@ function colorForClaude5h(u5h, uiState, lockOverlay) {
 
 function setNeedleToZero(needle) {
   if (!needle) return;
+  needle.classList.remove('speedo-needle-redline');
   needle.style.transform = 'rotate(-90deg)';
+}
+
+function setSpeedoNeedleForPace(needle, pace) {
+  if (!needle || !Number.isFinite(pace)) return;
+
+  if (pace <= 200) {
+    needle.classList.remove('speedo-needle-redline');
+    const angle = -90 + (Math.min(Math.max(pace, 0), 200) / 200) * 180;
+    needle.style.transform = `rotate(${angle}deg)`;
+    return;
+  }
+
+  const excess = Math.min(Math.max(pace - 200, 0), 120);
+  const overshoot = 5 + (excess / 120) * 7;
+  needle.style.setProperty('--rev-rest-angle', '90deg');
+  needle.style.setProperty('--rev-pull-angle', `${90 + overshoot}deg`);
+  needle.style.transform = 'rotate(90deg)';
+  needle.classList.add('speedo-needle-redline');
 }
 
 function applySpeedoUiState(needle, uiState) {
@@ -459,14 +478,14 @@ function renderClaudeSpeedo(a) {
   }
 
   if (pace === null) {
+    needle.classList.remove('speedo-needle-redline');
     value.textContent = '—';
     legend.className = 'speedo-legend';
     legend.textContent = 'Coletando dados';
     return;
   }
 
-  const angle = -90 + (Math.min(Math.max(pace, 0), 200) / 200) * 180;
-  needle.style.transform = `rotate(${angle}deg)`;
+  setSpeedoNeedleForPace(needle, pace);
   value.textContent = Math.round(pace);
 
   legend.className = 'speedo-legend';
@@ -569,9 +588,11 @@ function renderLovablePanel(a) {
   const lockOverlay = a.lockOverlay || { active: false };
 
   applySpeedoUiState(todayNeedle, uiState);
+  if (a.todayPace === null) todayNeedle.classList.remove('speedo-needle-redline');
 
   if (uiState === 'loading') {
     todayVal.textContent = '—';
+    todayNeedle.classList.remove('speedo-needle-redline');
     todayLegend.className = 'speedo-legend';
     todayLegend.textContent = 'Coletando dados';
   } else if (uiState === 'idle') {
@@ -579,8 +600,7 @@ function renderLovablePanel(a) {
     todayLegend.className = 'speedo-legend';
     todayLegend.textContent = 'Sem consumo recente';
   } else if (a.todayPace !== null) {
-    const angle = -90 + (Math.min(Math.max(a.todayPace, 0), 200) / 200) * 180;
-    todayNeedle.style.transform = `rotate(${angle}deg)`;
+    setSpeedoNeedleForPace(todayNeedle, a.todayPace);
     todayVal.textContent = Math.round(a.todayPace);
 
     todayLegend.className = 'speedo-legend';
