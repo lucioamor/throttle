@@ -2,9 +2,9 @@
 
 **Pace control for AI limits.**
 
-Extensão Chrome que transforma os limites opacos do Claude.ai em ritmo operacional mensurável. Velocímetro de consumo em tempo real, previsão de esgotamento, heatmap semanal, alertas de redline — tudo 100% local.
+Extensão Chrome que transforma os limites opacos do Claude.ai e Lovable em ritmo operacional mensurável. Velocímetro de consumo em tempo real, previsão de esgotamento, sparkline histórico, alertas de redline — tudo 100% local.
 
-Projetado desde o início para expansão multi-LLM (OpenAI, Gemini, Lovable).
+Suporta Claude.ai e Lovable.dev. Arquitetura multi-provider preparada para OpenAI e Gemini.
 
 ---
 
@@ -88,11 +88,11 @@ Click na barra força refresh imediato.
 
 ### Popup completo
 
-- **Velocímetro SVG** (0–200, 100 = ideal) com agulha animada
+- **Velocímetro SVG** (0–200, 100 = ideal) com agulha animada e animação rev-limiter
 - **Legenda contextual** que muda de acordo com o status ("🟢 Pace saudável", "🔴 REDLINE · zera em 42min")
-- Status das três janelas (5h / 7d / extra BRL)
+- Status das três janelas Claude (5h / 7d / extra BRL)
+- **Stats Lovable**: uso diário e mensal side-by-side com sparkline histórico
 - ETAs separados para 15min e 60min
-- **Heatmap 168h** estilo GitHub (últimas 7×24 horas)
 - **Export CSV** completo
 - **Settings** de poll, thresholds e toggles
 
@@ -117,8 +117,9 @@ Detecta automaticamente trocas de organização via webRequest. Cada org mantém
 2. Abra `chrome://extensions`
 3. Ative **"Modo do desenvolvedor"**
 4. **"Carregar sem compactação"** → selecione a pasta `throttle/`
-5. Abra `claude.ai` e envie uma mensagem
-6. A barra aparece no topo. Popup disponível no ícone da extensão
+5. Abra `claude.ai` e envie uma mensagem — a barra aparece no topo
+6. Abra `lovable.dev` para ver os créditos Lovable no popup
+7. Popup disponível no ícone da extensão
 
 ---
 
@@ -126,18 +127,23 @@ Detecta automaticamente trocas de organização via webRequest. Cada org mantém
 
 ```
 throttle/
-├── manifest.json            Manifest V3 com MAIN+ISOLATED scripts
-├── intercept.js             MAIN world — monkey-patches fetch
-├── bridge.js                ISOLATED world — forwards postMessage
-├── background.js            Service worker — análise, alertas, storage
-├── content.js               ISOLATED — Shadow DOM bar
-├── overlay.css              Placeholder (estilos reais no Shadow DOM)
+├── manifest.json              Manifest V3 com MAIN+ISOLATED scripts
+├── intercept.js               MAIN world — monkey-patches fetch (Claude)
+├── interceptor-lovable.js     MAIN world — intercepta fetch do Lovable
+├── bridge.js                  ISOLATED world — forwards postMessage
+├── background.js              Service worker — análise, alertas, storage
+├── content.js                 ISOLATED — Shadow DOM bar (Claude)
+├── content-lovable.js         ISOLATED — injeção no Lovable
+├── overlay.css                Placeholder (estilos reais no Shadow DOM)
 ├── popup.html
 ├── popup.css
-├── popup.js                 SVG speedo, heatmap, CSV export, settings
+├── popup.js                   SVG speedo, sparkline, CSV export, settings
 ├── lib/
-│   ├── storage.js           Multi-conta, retenção 8 dias, dedupe
-│   └── predictor.js         Rates, ETA, PACE, semáforo de status
+│   ├── storage.js             Multi-conta, retenção 8 dias, dedupe
+│   ├── predictor.js           Rates, ETA, PACE, semáforo de status
+│   └── providers/
+│       ├── claude.js          Parser/normalizer Claude.ai
+│       └── lovable.js         Parser/normalizer Lovable.dev
 └── icons/
     ├── icon16.png
     ├── icon48.png
@@ -162,7 +168,7 @@ Claude.ai tem redesigns frequentes. Um `<div style="position:fixed; top:0">` em 
 
 ### Por que 8 dias de retenção
 
-Janela semanal da API é de 7 dias. 8 dias dá margem para o heatmap cobrir o ciclo completo mais a transição do reset.
+Janela semanal da API é de 7 dias. 8 dias dá margem para o sparkline cobrir o ciclo completo mais a transição do reset.
 
 ---
 
@@ -178,15 +184,16 @@ Janela semanal da API é de 7 dias. 8 dias dá margem para o heatmap cobrir o ci
 
 ---
 
-## Roadmap multi-LLM
+## Suporte multi-LLM
 
-A arquitetura foi desenhada para suportar múltiplas LLMs. Expansão planejada:
+| Provider | Status | Métricas |
+|---|---|---|
+| **Claude.ai** | ✅ Ativo | 5h window, 7d window, extra mensal |
+| **Lovable.dev** | ✅ Ativo | Créditos diários e mensais, sparkline |
+| **OpenAI** | Planejado | `platform.openai.com/settings/organization/usage` |
+| **Gemini** | Planejado | `aistudio.google.com` quota pages |
 
-- **OpenAI** — `platform.openai.com/settings/organization/usage` (requer auth diferente)
-- **Gemini** — `aistudio.google.com` quota pages
-- **Lovable** — `lovable.dev` — particularmente valioso porque Lovable reseta créditos diários e otimizar o aproveitamento é a diferença entre entregar ou não um projeto
-
-Cada provider vira um módulo `lib/providers/{name}.js` com `discover()`, `normalize(payload)` e registra os buckets que expõe.
+Cada provider é um módulo `lib/providers/{name}.js` com `discover()` e `normalize(payload)`. Adicionar novo provider não exige mudança no core.
 
 ---
 
