@@ -309,6 +309,26 @@ html, body {
   font-family: ui-monospace, monospace;
 }
 
+/* ----- Week blocks (7-day elapsed indicator) ----- */
+.week-blocks {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.week-block {
+  aspect-ratio: 1;
+  background: #27272a;
+  border-radius: 2px;
+  transition: background 0.3s ease;
+}
+
+.week-block.week-block-elapsed {
+  background: #52525b;
+}
+
+/* ----- --- ----- */
 .stat-eta {
   margin-top: 4px;
   padding-top: 4px;
@@ -323,12 +343,18 @@ html, body {
   font-weight: 600;
 }
 
-/* ----- Heatmap ----- */
-.heatmap-section {
+/* ----- Sparkline ----- */
+.sparkline-section {
   background: #111113;
   border: 1px solid #1f1f23;
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 60px;
 }
 
 .section-title {
@@ -347,54 +373,6 @@ html, body {
   letter-spacing: 0;
   color: #a1a1aa;
   font-weight: 400;
-}
-
-.heatmap {
-  display: grid;
-  grid-template-columns: repeat(24, 1fr);
-  gap: 2px;
-  margin-bottom: 8px;
-}
-
-.heatmap .cell {
-  aspect-ratio: 1;
-  border-radius: 2px;
-  background: #1f1f23;
-  min-width: 0;
-  transition: transform 0.1s;
-  position: relative;
-}
-
-.heatmap .cell:hover {
-  transform: scale(1.5);
-  z-index: 1;
-  outline: 1px solid #f59e0b;
-}
-
-.heatmap .cell.scale-0 { background: #1f1f23; }
-.heatmap .cell.scale-1 { background: #1e40af; }
-.heatmap .cell.scale-2 { background: #3b82f6; }
-.heatmap .cell.scale-3 { background: #f59e0b; }
-.heatmap .cell.scale-4 { background: #ef4444; }
-
-.heatmap-legend {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  font-size: 10px;
-  color: #71717a;
-}
-
-.heatmap-scale {
-  display: flex;
-  gap: 2px;
-}
-
-.heatmap-scale .cell {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
 }
 
 /* ----- Actions ----- */

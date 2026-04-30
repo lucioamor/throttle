@@ -273,7 +273,8 @@ async function render() {
     const popupAnalysis = { ...analysis, lockOverlay: resolvePopupLockOverlay(analysis) };
     renderClaudeSpeedo(popupAnalysis);
     renderClaudeStats(popupAnalysis);
-    renderHeatmap(snapshots);
+    renderWeekBlocks(popupAnalysis);
+    renderSparkline(snapshots);
     renderFooter(popupAnalysis);
     renderPanelLockOverlay('claude', popupAnalysis.lockOverlay);
     renderPanelLockOverlay('lovable', null);
@@ -735,60 +736,141 @@ function formatLovableCredits(value) {
   return Number.isFinite(value) ? value.toFixed(1) : '—';
 }
 
-// -------- Heatmap (Claude only) --------
+// -------- Week blocks (Claude only) --------
 
-function renderHeatmap(snapshots) {
-  const heatmap = document.getElementById('heatmap');
-  if (!heatmap) return;
-  heatmap.innerHTML = '';
+function renderWeekBlocks(a) {
+  const mins = a.minutesToReset7d;
+  // days elapsed = 7 - days remaining; partial current day counts as elapsed
+  const daysRemaining = mins !== null ? Math.max(0, Math.min(7, mins / 1440)) : null;
+  const daysElapsed   = daysRemaining !== null ? Math.ceil(7 - daysRemaining) : 0;
 
-  const now = new Date();
+  for (let i = 0; i < 7; i++) {
+    const block = document.getElementById(`wblock-${i}`);
+    if (!block) continue;
+    // blocks 0..6 left→right = day1..day7; elapsed blocks get filled
+    block.classList.toggle('week-block-elapsed', i < daysElapsed);
+  }
+}
+
+// -------- Sparkline rolling-avg 7d (Claude only) --------
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function rollingAvg(arr, radius) {
+  return arr.map((_, i) => {
+    const lo = Math.max(0, i - radius);
+    const hi = Math.min(arr.length - 1, i + radius);
+    let sum = 0;
+    for (let j = lo; j <= hi; j++) sum += arr[j];
+    return sum / (hi - lo + 1);
+  });
+}
+
+function renderSparkline(snapshots) {
+  const svg = document.getElementById('sparkline');
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const W = 280, H = 60, PAD_L = 4, PAD_R = 4, PAD_T = 4, PAD_B = 10;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  const now = Date.now();
+  const start = now - 7 * 24 * 60 * 60 * 1000;
+
   const byHour = new Map();
   for (const s of snapshots) {
-    if (s.u5h === null) continue;
+    if (s.u5h === null || s.t < start) continue;
     const d = new Date(s.t);
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
     if (!byHour.has(key)) byHour.set(key, []);
     byHour.get(key).push(s);
   }
 
-  const buckets = new Map();
-  for (const [key, snaps] of byHour) {
-    snaps.sort((a, b) => a.t - b.t);
-    let delta = 0;
-    for (let i = 1; i < snaps.length; i++) {
-      const d = snaps[i].u5h - snaps[i-1].u5h;
-      if (d > 0) delta += d;
-    }
-    buckets.set(key, delta);
-  }
-
-  const maxDelta = Math.max(1, ...buckets.values());
-
+  const hours = [];
   for (let hoursAgo = 167; hoursAgo >= 0; hoursAgo--) {
-    const t = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
+    const t = new Date(now - hoursAgo * 60 * 60 * 1000);
     const key = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}-${t.getHours()}`;
-    const delta = buckets.get(key) || 0;
-    const el = document.createElement('div');
-    el.className = 'cell';
-    const ratio = delta / maxDelta;
-    let tier = 0;
-    if (ratio > 0.75) tier = 4;
-    else if (ratio > 0.5) tier = 3;
-    else if (ratio > 0.25) tier = 2;
-    else if (ratio > 0) tier = 1;
-    el.classList.add(`scale-${tier}`);
-    const hh = String(t.getHours()).padStart(2, '0');
-    const dd = t.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit' });
-    el.title = `${dd} ${hh}h — +${delta.toFixed(1)}%`;
-    heatmap.appendChild(el);
+    const snaps = byHour.get(key);
+    let delta = 0;
+    if (snaps) {
+      snaps.sort((a, b) => a.t - b.t);
+      for (let i = 1; i < snaps.length; i++) {
+        const d = snaps[i].u5h - snaps[i - 1].u5h;
+        if (d > 0) delta += d;
+      }
+    }
+    hours.push({ t: t.getTime(), delta });
   }
 
-  if (snapshots.length > 0) {
-    const from = new Date(snapshots[0].t);
-    document.getElementById('heatmap-range').textContent =
-      `since ${from.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`;
+  const smoothed = rollingAvg(hours.map(h => h.delta), 2);
+  const maxVal = Math.max(0.001, ...smoothed);
+  const totalDelta = hours.reduce((s, h) => s + h.delta, 0);
+
+  const points = hours.map((h, i) => ({
+    t: h.t,
+    x: PAD_L + (i / (hours.length - 1)) * plotW,
+    y: PAD_T + plotH - (smoothed[i] / maxVal) * plotH,
+  }));
+
+  // day separators at 00:00
+  for (let i = 0; i < points.length; i++) {
+    const t = new Date(points[i].t);
+    if (t.getHours() !== 0) continue;
+    const x = points[i].x;
+
+    const sep = document.createElementNS(SVG_NS, 'line');
+    sep.setAttribute('x1', x); sep.setAttribute('x2', x);
+    sep.setAttribute('y1', PAD_T); sep.setAttribute('y2', PAD_T + plotH);
+    sep.setAttribute('stroke', '#27272a');
+    sep.setAttribute('stroke-width', '1');
+    sep.setAttribute('stroke-dasharray', '2 2');
+    svg.appendChild(sep);
+
+    const tick = document.createElementNS(SVG_NS, 'line');
+    tick.setAttribute('x1', x); tick.setAttribute('x2', x);
+    tick.setAttribute('y1', PAD_T + plotH); tick.setAttribute('y2', PAD_T + plotH + 3);
+    tick.setAttribute('stroke', '#52525b');
+    tick.setAttribute('stroke-width', '1');
+    svg.appendChild(tick);
+
+    const lbl = document.createElementNS(SVG_NS, 'text');
+    lbl.setAttribute('x', x); lbl.setAttribute('y', H - 1);
+    lbl.setAttribute('text-anchor', 'middle');
+    lbl.setAttribute('fill', '#52525b');
+    lbl.setAttribute('font-size', '7');
+    lbl.setAttribute('font-family', 'ui-monospace, monospace');
+    lbl.textContent = String(t.getDate()).padStart(2, '0') + '/' + String(t.getMonth() + 1).padStart(2, '0');
+    svg.appendChild(lbl);
   }
+
+  const baseY = PAD_T + plotH;
+  const areaD = `M ${points[0].x} ${baseY} ` +
+    points.map(p => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') +
+    ` L ${points[points.length - 1].x} ${baseY} Z`;
+  const area = document.createElementNS(SVG_NS, 'path');
+  area.setAttribute('d', areaD);
+  area.setAttribute('fill', 'rgba(245, 158, 11, 0.12)');
+  svg.appendChild(area);
+
+  const lineD = 'M ' + points.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L ');
+  const line = document.createElementNS(SVG_NS, 'path');
+  line.setAttribute('d', lineD);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', '#f59e0b');
+  line.setAttribute('stroke-width', '1.5');
+  line.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(line);
+
+  const last = points[points.length - 1];
+  const dot = document.createElementNS(SVG_NS, 'circle');
+  dot.setAttribute('cx', last.x); dot.setAttribute('cy', last.y);
+  dot.setAttribute('r', '2');
+  dot.setAttribute('fill', '#f59e0b');
+  svg.appendChild(dot);
+
+  const rangeEl = document.getElementById('sparkline-range');
+  if (rangeEl) rangeEl.textContent = `+${totalDelta.toFixed(1)}% / 7d`;
 }
 
 // -------- Footer --------
@@ -841,8 +923,6 @@ function wireEvents() {
     }, () => setTimeout(render, 600));
   });
 
-  document.getElementById('export-csv-btn')?.addEventListener('click', exportCSV);
-
   document.getElementById('settings-btn')?.addEventListener('click', async () => {
     const modal = document.getElementById('settings-modal');
     await loadSettingsIntoForm();
@@ -883,51 +963,3 @@ async function saveSettings() {
   await render();
 }
 
-// -------- CSV export --------
-
-async function exportCSV() {
-  const snapshots = await getSnapshots(currentAccountId);
-  if (!snapshots.length) { alert('Sem snapshots para exportar.'); return; }
-
-  let rows, headers;
-  if (activeProvider === 'claude') {
-    headers = ['timestamp_iso','timestamp_ms','u5h_pct','u7d_pct','reset_5h_iso','reset_7d_iso','extra_used','extra_limit','extra_util_pct','extra_currency'];
-    rows = snapshots.map(s => [
-      new Date(s.t).toISOString(), s.t,
-      fmt(s.u5h), fmt(s.u7d), s.reset5h||'', s.reset7d||'',
-      fmt(s.extra_used), fmt(s.extra_limit), fmt(s.extra_util), s.extra_currency||''
-    ]);
-  } else {
-    headers = ['timestamp_iso','timestamp_ms','daily_used','daily_total','daily_reset_at','monthly_used','monthly_total','monthly_reset_at','cloud_used','cloud_total','ai_used','ai_total','ws_name'];
-    rows = snapshots.map(s => [
-      new Date(s.t).toISOString(), s.t,
-      fmt(s.daily_used), fmt(s.daily_total), s.daily_reset_at||'',
-      fmt(s.monthly_used), fmt(s.monthly_total), s.monthly_reset_at||'',
-      fmt(s.cloud_used), fmt(s.cloud_total), fmt(s.ai_used), fmt(s.ai_total),
-      s.ws_name||''
-    ]);
-  }
-
-  const csv = [headers, ...rows].map(r => r.map(csvEscape).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `throttle_${activeProvider}_${new Date().toISOString().split('T')[0]}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function fmt(v) {
-  if (v === null || v === undefined) return '';
-  if (typeof v === 'number') return v.toFixed(2);
-  return String(v);
-}
-
-function csvEscape(v) {
-  const s = String(v ?? '');
-  if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
-}
