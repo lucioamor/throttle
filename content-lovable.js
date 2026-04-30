@@ -239,6 +239,19 @@
           height: 100%; gap: 5px; flex-shrink: 0;
           background: rgba(255,255,255,0.04);
         }
+        .speedo-arc {
+          opacity: 0.24;
+          transition: opacity 0.25s ease, stroke-width 0.25s ease, filter 0.25s ease;
+        }
+        .speedo-arc[data-speedo-band="low"] { --speedo-glow: rgba(59, 130, 246, 0.85); }
+        .speedo-arc[data-speedo-band="healthy"] { --speedo-glow: rgba(34, 197, 94, 0.85); }
+        .speedo-arc[data-speedo-band="attention"] { --speedo-glow: rgba(234, 179, 8, 0.85); }
+        .speedo-arc[data-speedo-band="critical"] { --speedo-glow: rgba(239, 68, 68, 0.85); }
+        .speedo-arc.speedo-arc-active {
+          opacity: 1;
+          stroke-width: 3.2;
+          filter: drop-shadow(0 0 3px var(--speedo-glow));
+        }
         .pace-val {
           font-size: 13px; font-weight: 700; color: #f59e0b;
           min-width: 28px; text-align: center; transition: color 0.3s ease;
@@ -246,6 +259,7 @@
         .pace-val[data-status="red"]    { color: #f87171; }
         .pace-val[data-status="yellow"] { color: #fbbf24; }
         .pace-val[data-status="blue"]   { color: #60a5fa; }
+        .pace-val[data-status="green"]  { color: #86efac; }
         .trend { font-size: 10px; flex-shrink: 0; transition: color 0.3s ease; }
         .trend[data-dir="up"]     { color: #f87171; }
         .trend[data-dir="down"]   { color: #86efac; }
@@ -326,9 +340,10 @@
         <div class="speedo-wrap" id="speedo-wrap">
           <svg width="28" height="18" viewBox="0 0 28 18">
             <path d="M 2 16 A 12 12 0 0 1 26 16" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2.8" stroke-linecap="round"/>
-            <path d="M 2 16 A 12 12 0 0 1 8 5"   fill="none" stroke="#1e40af" stroke-width="2.8" stroke-linecap="round" opacity="0.7"/>
-            <path d="M 8 5 A 12 12 0 0 1 20 5"   fill="none" stroke="#16a34a" stroke-width="2.8" stroke-linecap="round" opacity="0.7"/>
-            <path d="M 20 5 A 12 12 0 0 1 26 16" fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round" opacity="0.7"/>
+            <path class="speedo-arc" data-speedo-band="low" d="M 2 16 A 12 12 0 0 1 8 6"    fill="none" stroke="#1e40af" stroke-width="2.8" stroke-linecap="round"/>
+            <path class="speedo-arc" data-speedo-band="healthy" d="M 8 6 A 12 12 0 0 1 14 4.5"   fill="none" stroke="#16a34a" stroke-width="2.8" stroke-linecap="round"/>
+            <path class="speedo-arc" data-speedo-band="attention" d="M 14 4.5 A 12 12 0 0 1 20 6"  fill="none" stroke="#ca8a04" stroke-width="2.8" stroke-linecap="round"/>
+            <path class="speedo-arc" data-speedo-band="critical" d="M 20 6 A 12 12 0 0 1 26 16"   fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round"/>
             <line id="needle" x1="14" y1="16" x2="14" y2="5" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"
               style="transform-origin:14px 16px; transform:rotate(-90deg); transition:transform 0.9s cubic-bezier(0.34,1.56,0.64,1);"/>
             <circle cx="14" cy="16" r="2.2" fill="#f59e0b"/>
@@ -388,6 +403,30 @@
     return isLocked || uiState === 'critical';
   }
 
+  function speedoBandForPace(pace) {
+    if (!Number.isFinite(pace)) return null;
+    if (pace < 66) return 'low';
+    if (pace < 100) return 'healthy';
+    if (pace < 134) return 'attention';
+    return 'critical';
+  }
+
+  function setSpeedoArcForPace(pace) {
+    const activeBand = speedoBandForPace(pace);
+    shadow?.querySelectorAll('.speedo-arc').forEach((arc) => {
+      arc.classList.toggle('speedo-arc-active', arc.dataset.speedoBand === activeBand);
+    });
+  }
+
+  function paceStatusForSpeedoBand(pace) {
+    const band = speedoBandForPace(pace);
+    if (band === 'low') return 'blue';
+    if (band === 'healthy') return 'green';
+    if (band === 'attention') return 'yellow';
+    if (band === 'critical') return 'red';
+    return 'green';
+  }
+
   function lovableDailyLevel(remaining) {
     if (!Number.isFinite(remaining)) return 'red';
     if (remaining >= 4) return 'blue';
@@ -430,10 +469,12 @@
 
     if (uiState !== 'loading' && todayPace !== null) {
       const angle = -90 + (Math.min(Math.max(todayPace, 0), 200) / 200) * 180;
+      setSpeedoArcForPace(todayPace);
       needle.style.transform = `rotate(${angle}deg)`;
       paceEl.textContent = Math.round(todayPace);
-      paceEl.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
+      paceEl.dataset.status = paceStatusForSpeedoBand(todayPace);
     } else {
+      setSpeedoArcForPace(null);
       paceEl.textContent = '—';
       paceEl.dataset.status = 'green';
     }

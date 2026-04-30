@@ -34,6 +34,24 @@ function formatResetCountdown(minutes) {
   return `${h}h${String(m).padStart(2, '0')}m`;
 }
 
+function formatReset5h(minutes) {
+  if (minutes === null || minutes === undefined || !Number.isFinite(minutes) || minutes < 0) return 'resets in —';
+  return `resets in ${formatResetCountdown(minutes)}`;
+}
+
+function formatReset7d(minutes) {
+  if (minutes === null || minutes === undefined || !Number.isFinite(minutes) || minutes < 0) return 'resets in —';
+  const totalMinutes = Math.max(0, Math.ceil(minutes));
+  if (totalMinutes >= 1440) {
+    const d = Math.floor(totalMinutes / 1440);
+    const h = Math.floor((totalMinutes % 1440) / 60);
+    return `resets in ${d}d${String(h).padStart(2, '0')}h`;
+  }
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `resets in ${String(h).padStart(2, '0')}h${String(m).padStart(2, '0')}m`;
+}
+
 (async function init() {
   activeProvider = await inferProviderFromActiveTab();
   await renderTabs();
@@ -206,7 +224,7 @@ function resolvePopupLockOverlay(analysis) {
       kind: 'window',
       icon: base.icon || '⏳',
       title: base.title || 'Janela 5h esgotada',
-      detail: base.detail || `reset ${formatResetCountdown(analysis.minutesToReset5h)}`
+      detail: base.detail || `resets in ${formatResetCountdown(analysis.minutesToReset5h)}`
     };
   }
 
@@ -399,8 +417,27 @@ function setNeedleToZero(needle) {
   needle.style.transform = 'rotate(-90deg)';
 }
 
+function speedoBandForPace(pace) {
+  if (!Number.isFinite(pace)) return null;
+  if (pace < 73) return 'low';
+  if (pace < 113) return 'healthy';
+  if (pace < 144) return 'attention';
+  return 'critical';
+}
+
+function setSpeedoArcForPace(needle, pace) {
+  const speedo = needle?.closest('.speedo');
+  if (!speedo) return;
+
+  const activeBand = speedoBandForPace(pace);
+  speedo.querySelectorAll('.speedo-arc').forEach((arc) => {
+    arc.classList.toggle('speedo-arc-active', arc.dataset.speedoBand === activeBand);
+  });
+}
+
 function setSpeedoNeedleForPace(needle, pace) {
   if (!needle || !Number.isFinite(pace)) return;
+  setSpeedoArcForPace(needle, pace);
 
   if (pace <= 200) {
     needle.classList.remove('speedo-needle-redline');
@@ -421,6 +458,11 @@ function applySpeedoUiState(needle, uiState) {
   const speedo = needle?.closest('.speedo');
   if (speedo) {
     speedo.classList.toggle('speedo-idle', uiState === 'idle');
+    if (uiState === 'loading' || uiState === 'idle') {
+      speedo.querySelectorAll('.speedo-arc-active').forEach((arc) => {
+        arc.classList.remove('speedo-arc-active');
+      });
+    }
   }
   if (!needle) return;
   if (uiState === 'loading') {
@@ -479,6 +521,7 @@ function renderClaudeSpeedo(a) {
 
   if (pace === null) {
     needle.classList.remove('speedo-needle-redline');
+    setSpeedoArcForPace(needle, null);
     value.textContent = '—';
     legend.className = 'speedo-legend';
     legend.textContent = 'Coletando dados';
@@ -494,13 +537,13 @@ function renderClaudeSpeedo(a) {
   if (lockOverlay.active) {
     legend.textContent = `${lockOverlay.title} · ${lockOverlay.detail}`;
   } else if (uiState === 'critical' || pace > 130) {
-    legend.textContent = `Redline · zera ${formatETA(a.etaBlend)} · reset ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Redlining · ${formatETA(a.etaBlend)} to zero · resets in ${formatETA(a.minutesToReset5h)}`;
   } else if (uiState === 'attention' || pace > 105) {
     legend.textContent = `Acima do pace · ETA ${formatETA(a.etaBlend)}`;
   } else if (pace < 50) {
-    legend.textContent = `Pace baixo · reset ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Pace baixo · resets in ${formatETA(a.minutesToReset5h)}`;
   } else {
-    legend.textContent = `Pace saudável · reset ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Pace saudável · resets in ${formatETA(a.minutesToReset5h)}`;
   }
 }
 
@@ -511,8 +554,8 @@ function renderClaudeStats(a) {
   const fill5h = document.getElementById('stat-5h-fill');
   const pct5h = document.getElementById('stat-5h-pct');
   const reset5h = document.getElementById('stat-5h-reset');
-  const eta15 = document.getElementById('stat-5h-eta15');
-  const eta60 = document.getElementById('stat-5h-eta60');
+  const eta60  = document.getElementById('stat-5h-eta15');
+  const eta300 = document.getElementById('stat-5h-eta60');
   const etaRow = document.getElementById('stat-5h-eta-row');
   const stat5hWrap = document.getElementById('stat-5h-wrap');
   if (stat5hWrap) stat5hWrap.classList.toggle('stat-disabled', lockOverlay.kind === 'monthly');
@@ -527,31 +570,31 @@ function renderClaudeStats(a) {
     fill5h.style.background = '#52525b';
     pct5h.textContent = '—';
     reset5h.textContent = 'coletando...';
-    eta15.textContent = '—';
-    eta60.textContent = '—';
+    eta60.textContent  = '—';
+    eta300.textContent = '—';
   } else if (uiState === 'idle') {
     fill5h.style.width = '0%';
     fill5h.style.background = colorForClaude5h(0, uiState, lockOverlay);
     pct5h.textContent = '0%';
-    reset5h.textContent = `reset ${formatResetCountdown(a.minutesToReset5h)}`;
-    eta15.textContent = '—';
-    eta60.textContent = '—';
+    reset5h.textContent = formatReset5h(a.minutesToReset5h);
+    eta60.textContent  = '—';
+    eta300.textContent = '—';
   } else if (l.u5h !== null) {
     fill5h.style.width  = `${Math.min(l.u5h, 100)}%`;
     fill5h.style.background = colorForClaude5h(l.u5h, uiState, lockOverlay);
     pct5h.textContent = `${l.u5h.toFixed(1)}%`;
     reset5h.textContent = locked5h
       ? `volta em ${formatResetCountdown(a.minutesToReset5h)}`
-      : `reset ${formatResetCountdown(a.minutesToReset5h)}`;
-    eta15.textContent = locked5h ? '—' : formatETA(a.eta15);
-    eta60.textContent = locked5h ? '—' : formatETA(a.eta60);
+      : formatReset5h(a.minutesToReset5h);
+    eta60.textContent  = locked5h ? '—' : formatETA(a.eta60);
+    eta300.textContent = locked5h ? '—' : formatETA(a.eta300);
   } else {
     fill5h.style.width = '0%';
     fill5h.style.background = '#52525b';
     pct5h.textContent = '—';
-    reset5h.textContent = 'reset —';
-    eta15.textContent = '—';
-    eta60.textContent = '—';
+    reset5h.textContent = 'resets in —';
+    eta60.textContent  = '—';
+    eta300.textContent = '—';
   }
 
   if (l.u7d !== null) {
@@ -561,7 +604,7 @@ function renderClaudeStats(a) {
       mask7d.style.left = `${pct7d}%`;
     }
     document.getElementById('stat-7d-pct').textContent   = `${l.u7d.toFixed(1)}%`;
-    document.getElementById('stat-7d-reset').textContent = `reset ${formatResetCountdown(a.minutesToReset7d)}`;
+    document.getElementById('stat-7d-reset').textContent = formatReset7d(a.minutesToReset7d);
   }
 
   if (l.extra_used !== null && l.extra_limit) {
@@ -588,7 +631,10 @@ function renderLovablePanel(a) {
   const lockOverlay = a.lockOverlay || { active: false };
 
   applySpeedoUiState(todayNeedle, uiState);
-  if (a.todayPace === null) todayNeedle.classList.remove('speedo-needle-redline');
+  if (a.todayPace === null) {
+    todayNeedle.classList.remove('speedo-needle-redline');
+    setSpeedoArcForPace(todayNeedle, null);
+  }
 
   if (uiState === 'loading') {
     todayVal.textContent = '—';
@@ -610,7 +656,7 @@ function renderLovablePanel(a) {
     if (lockOverlay.active) {
       todayLegend.textContent = `${lockOverlay.title} · ${lockOverlay.detail}`;
     } else if (uiState === 'critical') {
-      todayLegend.textContent = `Redline · esgota ${formatETA(a.etaDailyExhaust)} · reset ${formatETA(a.minutesToDailyReset)}`;
+      todayLegend.textContent = `Redlining · ${formatETA(a.etaDailyExhaust)} to zero · reset ${formatETA(a.minutesToDailyReset)}`;
     } else if (uiState === 'attention') {
       todayLegend.textContent = `Atenção · esgota ${formatETA(a.etaDailyExhaust)}`;
     } else {
@@ -757,7 +803,7 @@ function drawClaudeTicks() {
   const group  = document.getElementById('speedo-ticks');
   const labels = document.getElementById('speedo-tick-labels');
   if (!group || !labels) return;
-  const cx = 120, cy = 140, rOuter = 100, rInner = 90, rLabel = 78;
+  const cx = 120, cy = 120, rOuter = 100, rInner = 90, rLabel = 78;
   for (let pace = 0; pace <= 200; pace += 25) {
     const angleDeg = -180 + (pace / 200) * 180;
     const rad = (angleDeg * Math.PI) / 180;
@@ -798,14 +844,18 @@ function wireEvents() {
   document.getElementById('export-csv-btn')?.addEventListener('click', exportCSV);
 
   document.getElementById('settings-btn')?.addEventListener('click', async () => {
-    const panel = document.getElementById('settings-panel');
-    if (panel.hidden) { await loadSettingsIntoForm(); panel.hidden = false; }
-    else panel.hidden = true;
+    const modal = document.getElementById('settings-modal');
+    await loadSettingsIntoForm();
+    modal.classList.add('open');
+  });
+
+  document.getElementById('settings-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
   });
 
   document.getElementById('settings-save')?.addEventListener('click', saveSettings);
   document.getElementById('settings-cancel')?.addEventListener('click', () => {
-    document.getElementById('settings-panel').hidden = true;
+    document.getElementById('settings-modal').classList.remove('open');
   });
 }
 
@@ -829,7 +879,7 @@ async function saveSettings() {
   };
   await updateSettings(patch);
   chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED' });
-  document.getElementById('settings-panel').hidden = true;
+  document.getElementById('settings-modal').classList.remove('open');
   await render();
 }
 

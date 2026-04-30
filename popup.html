@@ -13,7 +13,7 @@
     }
     .provider-tab {
       flex: 1;
-      padding: 8px;
+      padding: 6px;
       text-align: center;
       font-size: 11px;
       font-weight: 700;
@@ -31,44 +31,39 @@
     .provider-tab:hover { color: #a1a1aa; }
     .provider-tab.active { color: #f59e0b; border-bottom-color: #f59e0b; }
 
-    /* Lovable panel */
-    #panel-lovable .speedo { }
-
     /* Daily dots */
     .lv-dots-wrap {
       display: flex;
       align-items: center;
-      gap: 6px;
-      margin: 6px 0 2px;
+      gap: 5px;
+      margin: 4px 0 2px;
     }
     .lv-dot {
-      width: 10px; height: 10px;
+      width: 9px; height: 9px;
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .lv-dot.avail[data-level="blue"] { background: #3b82f6; }
-    .lv-dot.avail[data-level="green"] { background: #22c55e; }
+    .lv-dot.avail[data-level="blue"]   { background: #3b82f6; }
+    .lv-dot.avail[data-level="green"]  { background: #22c55e; }
     .lv-dot.avail[data-level="yellow"] { background: #eab308; }
-    .lv-dot.avail[data-level="red"] { background: #ef4444; }
-    .lv-dot.used  { background: #27272a; }
+    .lv-dot.avail[data-level="red"]    { background: #ef4444; }
+    .lv-dot.used { background: #27272a; }
     .lv-daily-text {
       font-size: 11px;
       color: #a1a1aa;
       font-family: ui-monospace, monospace;
       margin-top: 2px;
     }
-    .lv-daily-remaining {
-      font-weight: 700;
-    }
-    .lv-daily-remaining[data-level="blue"] { color: #60a5fa; }
-    .lv-daily-remaining[data-level="green"] { color: #86efac; }
+    .lv-daily-remaining { font-weight: 700; }
+    .lv-daily-remaining[data-level="blue"]   { color: #60a5fa; }
+    .lv-daily-remaining[data-level="green"]  { color: #86efac; }
     .lv-daily-remaining[data-level="yellow"] { color: #facc15; }
-    .lv-daily-remaining[data-level="red"] { color: #f87171; }
+    .lv-daily-remaining[data-level="red"]    { color: #f87171; }
 
-    /* Monthly burn indicator */
+    /* Monthly burn */
     .lv-burn-row {
-      margin-top: 6px;
-      padding-top: 6px;
+      margin-top: 4px;
+      padding-top: 4px;
       border-top: 1px dashed #27272a;
       font-size: 11px;
       color: #a1a1aa;
@@ -76,34 +71,71 @@
     }
     .lv-burn-row b { color: #f59e0b; font-weight: 600; }
 
-    /* Passive metrics (Cloud/AI) */
+    /* Passive metrics grid */
     .lv-passive-label {
       font-size: 10px;
       color: #52525b;
       font-weight: 700;
       letter-spacing: 0.12em;
-      margin-bottom: 4px;
     }
     .lv-passive-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 10px;
+      grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+      gap: 8px;
     }
-    .lv-passive-grid .stat {
-      min-width: 0;
-    }
-    .lv-passive-grid .stat-label {
-      letter-spacing: 0.08em;
-      white-space: nowrap;
-    }
-    .lv-passive-grid .stat-row {
-      gap: 6px;
-    }
+    .lv-passive-grid .stat { min-width: 0; }
+    .lv-passive-grid .stat-label { letter-spacing: 0.08em; white-space: nowrap; }
+    .lv-passive-grid .stat-row { gap: 4px; }
     .lv-passive-grid .stat-sub {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Stats 2-col grid for Claude */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stats-grid .stat { min-width: 0; }
+    #stat-extra-wrap { grid-column: 1 / -1; }
+
+    /* Settings modal overlay */
+    .settings-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .settings-modal.open { display: flex; }
+    .settings-box {
+      background: #111113;
+      border: 1px solid #3f3f46;
+      border-radius: 10px;
+      padding: 14px;
+      width: 320px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .settings-box h3 {
+      font-size: 11px;
+      color: #f59e0b;
+      margin-bottom: 10px;
+      letter-spacing: 0.15em;
+      font-weight: 700;
+    }
+
+    /* Footer inline in header */
+    .header-footer {
+      font-size: 10px;
+      color: #52525b;
+      font-family: ui-monospace, monospace;
+      text-align: right;
+      line-height: 1.3;
     }
   </style>
 </head>
@@ -127,7 +159,13 @@
           <select id="account-select" class="account"></select>
         </div>
       </div>
-      <button id="refresh-btn" class="icon-btn" title="Force refresh">↻</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+        <button id="refresh-btn" class="icon-btn" title="Force refresh">↻</button>
+        <div class="header-footer">
+          <div id="last-update">—</div>
+          <div id="snap-count">—</div>
+        </div>
+      </div>
     </header>
 
     <!-- Provider tabs -->
@@ -140,20 +178,22 @@
     <div id="panel-claude" class="provider-panel">
 
       <section class="speedo">
-        <svg id="speedo-svg" viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet">
-          <path d="M 20 140 A 100 100 0 0 1 220 140" fill="none" stroke="#1f2937" stroke-width="14" stroke-linecap="round"/>
-          <path class="speedo-arc" d="M 20 140 A 100 100 0 0 1 80 52"   fill="none" stroke="#1e40af" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path class="speedo-arc" d="M 80 52 A 100 100 0 0 1 140 40"   fill="none" stroke="#16a34a" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path class="speedo-arc" d="M 140 40 A 100 100 0 0 1 185 62"  fill="none" stroke="#ca8a04" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path class="speedo-arc" d="M 185 62 A 100 100 0 0 1 220 140" fill="none" stroke="#dc2626" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+        <svg id="speedo-svg" viewBox="0 0 240 128" preserveAspectRatio="xMidYMid meet">
+          <g transform="translate(0 -8)">
+          <path d="M 20 120 A 100 100 0 0 1 220 120" fill="none" stroke="#1f2937" stroke-width="14" stroke-linecap="round"/>
+          <path class="speedo-arc" data-speedo-band="low" d="M 20 120 A 100 100 0 0 1 80 32"  fill="none" stroke="#1e40af" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" data-speedo-band="healthy" d="M 80 32 A 100 100 0 0 1 140 20"  fill="none" stroke="#16a34a" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" data-speedo-band="attention" d="M 140 20 A 100 100 0 0 1 185 42" fill="none" stroke="#ca8a04" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" data-speedo-band="critical" d="M 185 42 A 100 100 0 0 1 220 120" fill="none" stroke="#dc2626" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
           <g id="speedo-ticks" stroke="#4b5563" stroke-width="1.5"></g>
           <g id="speedo-tick-labels" fill="#9ca3af" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle"></g>
-          <line id="speedo-needle" x1="120" y1="140" x2="120" y2="55"
+          <line id="speedo-needle" x1="120" y1="120" x2="120" y2="35"
             stroke="#f59e0b" stroke-width="3" stroke-linecap="round"
-            style="transform-origin: 120px 140px; transition: transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);"/>
-          <circle cx="120" cy="140" r="8" fill="#1f2937" stroke="#f59e0b" stroke-width="2"/>
-          <text x="120" y="110" fill="#fafafa" font-size="28" font-weight="700" text-anchor="middle" font-family="ui-monospace, monospace" id="speedo-value">—</text>
-          <text x="120" y="128" fill="#9ca3af" font-size="10" letter-spacing="2" text-anchor="middle">PACE</text>
+            style="transform-origin: 120px 120px; transition: transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);"/>
+          <circle cx="120" cy="120" r="8" fill="#1f2937" stroke="#f59e0b" stroke-width="2"/>
+          <text x="120" y="92" fill="#fafafa" font-size="28" font-weight="700" text-anchor="middle" font-family="ui-monospace, monospace" id="speedo-value">—</text>
+          <text x="120" y="110" fill="#9ca3af" font-size="10" letter-spacing="2" text-anchor="middle">PACE</text>
+          </g>
         </svg>
         <div class="speedo-legend" id="speedo-legend">—</div>
         <div class="panel-lock-overlay" id="panel-claude-lock" hidden>
@@ -164,37 +204,39 @@
       </section>
 
       <section class="stats">
-        <div class="stat" id="stat-5h-wrap">
-          <div class="stat-label">5-HOUR WINDOW</div>
-          <div class="stat-bar"><div class="stat-fill" id="stat-5h-fill" style="width:0%"></div></div>
-          <div class="stat-row">
-            <span id="stat-5h-pct" class="stat-pct">—</span>
-            <span id="stat-5h-reset" class="stat-sub">reset —</span>
+        <div class="stats-grid">
+          <div class="stat" id="stat-5h-wrap">
+            <div class="stat-label">CURRENT SESSION</div>
+            <div class="stat-bar"><div class="stat-fill" id="stat-5h-fill" style="width:0%"></div></div>
+            <div class="stat-row">
+              <span id="stat-5h-pct" class="stat-pct">—</span>
+              <span id="stat-5h-reset" class="stat-sub">reset —</span>
+            </div>
+            <div class="stat-row stat-eta" id="stat-5h-eta-row">
+              <span title="Time until the 5h window hits 100% based on your average pace over the last 60 minutes">ETA: <b id="stat-5h-eta15">—</b></span>
+              <span title="Time until the 5h window hits 100% based on your average pace over the last 5 hours">5h ETA: <b id="stat-5h-eta60">—</b></span>
+            </div>
           </div>
-          <div class="stat-row stat-eta" id="stat-5h-eta-row">
-            <span>ETA 15m: <b id="stat-5h-eta15">—</b></span>
-            <span>ETA 60m: <b id="stat-5h-eta60">—</b></span>
-          </div>
-        </div>
 
-        <div class="stat">
-          <div class="stat-label">7-DAY WINDOW</div>
-          <div class="stat-bar stat-bar-spectrum">
-            <div class="progress-spectrum" id="stat-7d-spectrum"></div>
-            <div class="progress-mask" id="stat-7d-mask" style="left:0%"></div>
+          <div class="stat">
+            <div class="stat-label">WEEKLY LIMIT</div>
+            <div class="stat-bar stat-bar-spectrum">
+              <div class="progress-spectrum" id="stat-7d-spectrum"></div>
+              <div class="progress-mask" id="stat-7d-mask" style="left:0%"></div>
+            </div>
+            <div class="stat-row">
+              <span id="stat-7d-pct" class="stat-pct">—</span>
+              <span id="stat-7d-reset" class="stat-sub">reset —</span>
+            </div>
           </div>
-          <div class="stat-row">
-            <span id="stat-7d-pct" class="stat-pct">—</span>
-            <span id="stat-7d-reset" class="stat-sub">reset —</span>
-          </div>
-        </div>
 
-        <div class="stat" id="stat-extra-wrap" style="display:none;">
-          <div class="stat-label">CRÉDITOS EXTRAS PAGOS</div>
-          <div class="stat-bar"><div class="stat-fill" id="stat-extra-fill" style="width:0%"></div></div>
-          <div class="stat-row">
-            <span id="stat-extra-pct" class="stat-pct">—</span>
-            <span id="stat-extra-sub" class="stat-sub">—</span>
+          <div class="stat" id="stat-extra-wrap" style="display:none;">
+            <div class="stat-label">CRÉDITOS EXTRAS PAGOS</div>
+            <div class="stat-bar"><div class="stat-fill" id="stat-extra-fill" style="width:0%"></div></div>
+            <div class="stat-row">
+              <span id="stat-extra-pct" class="stat-pct">—</span>
+              <span id="stat-extra-sub" class="stat-sub">—</span>
+            </div>
           </div>
         </div>
       </section>
@@ -221,20 +263,21 @@
     <!-- ===== LOVABLE PANEL ===== -->
     <div id="panel-lovable" class="provider-panel" hidden>
 
-      <!-- TODAY PACE speedo -->
       <section class="speedo">
-        <svg id="lv-speedo-svg" viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:260px;height:auto;">
-          <path d="M 20 140 A 100 100 0 0 1 220 140" fill="none" stroke="#1f2937"  stroke-width="14" stroke-linecap="round"/>
-          <path class="speedo-arc" d="M 20 140 A 100 100 0 0 1 80 52"   fill="none" stroke="#1e40af"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path class="speedo-arc" d="M 80 52 A 100 100 0 0 1 140 40"   fill="none" stroke="#16a34a"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path class="speedo-arc" d="M 140 40 A 100 100 0 0 1 185 62"  fill="none" stroke="#ca8a04"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <path class="speedo-arc" d="M 185 62 A 100 100 0 0 1 220 140" fill="none" stroke="#dc2626"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-          <line id="lv-speedo-needle" x1="120" y1="140" x2="120" y2="55"
+        <svg id="lv-speedo-svg" viewBox="0 0 240 128" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:260px;height:auto;">
+          <g transform="translate(0 -8)">
+          <path d="M 20 120 A 100 100 0 0 1 220 120" fill="none" stroke="#1f2937"  stroke-width="14" stroke-linecap="round"/>
+          <path class="speedo-arc" data-speedo-band="low" d="M 20 120 A 100 100 0 0 1 80 32"  fill="none" stroke="#1e40af"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" data-speedo-band="healthy" d="M 80 32 A 100 100 0 0 1 140 20"  fill="none" stroke="#16a34a"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" data-speedo-band="attention" d="M 140 20 A 100 100 0 0 1 185 42" fill="none" stroke="#ca8a04"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <path class="speedo-arc" data-speedo-band="critical" d="M 185 42 A 100 100 0 0 1 220 120" fill="none" stroke="#dc2626"  stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+          <line id="lv-speedo-needle" x1="120" y1="120" x2="120" y2="35"
             stroke="#f59e0b" stroke-width="3" stroke-linecap="round"
-            style="transform-origin:120px 140px; transition:transform 0.9s cubic-bezier(0.34,1.56,0.64,1);"/>
-          <circle cx="120" cy="140" r="8" fill="#1f2937" stroke="#f59e0b" stroke-width="2"/>
-          <text x="120" y="110" fill="#fafafa" font-size="28" font-weight="700" text-anchor="middle" font-family="ui-monospace,monospace" id="lv-speedo-value">—</text>
-          <text x="120" y="128" fill="#9ca3af" font-size="10" letter-spacing="2" text-anchor="middle">TODAY PACE</text>
+            style="transform-origin:120px 120px; transition:transform 0.9s cubic-bezier(0.34,1.56,0.64,1);"/>
+          <circle cx="120" cy="120" r="8" fill="#1f2937" stroke="#f59e0b" stroke-width="2"/>
+          <text x="120" y="92" fill="#fafafa" font-size="28" font-weight="700" text-anchor="middle" font-family="ui-monospace,monospace" id="lv-speedo-value">—</text>
+          <text x="120" y="110" fill="#9ca3af" font-size="10" letter-spacing="2" text-anchor="middle">TODAY PACE</text>
+          </g>
         </svg>
         <div class="speedo-legend" id="lv-today-legend">—</div>
         <div class="panel-lock-overlay" id="panel-lovable-lock" hidden>
@@ -245,15 +288,12 @@
       </section>
 
       <section class="stats">
-
-        <!-- Créditos diários -->
         <div class="stat">
           <div class="stat-label">CRÉDITOS GRATUITOS DIÁRIOS</div>
           <div class="lv-dots-wrap" id="lv-daily-dots"></div>
           <div class="lv-daily-text" id="lv-daily-text">—</div>
         </div>
 
-        <!-- Monthly BURN -->
         <div class="stat">
           <div class="stat-label">CICLO MENSAL</div>
           <div class="stat-bar"><div class="stat-fill" id="lv-monthly-fill" style="width:0%"></div></div>
@@ -265,7 +305,6 @@
         </div>
 
         <div class="lv-passive-grid">
-          <!-- Cloud (passivo) -->
           <div class="stat" id="lv-cloud-wrap" style="display:none;">
             <div class="stat-label">CLOUD <span class="lv-passive-label">passivo</span></div>
             <div class="stat-bar"><div class="stat-fill" id="lv-cloud-fill" style="width:0%"></div></div>
@@ -275,7 +314,6 @@
             </div>
           </div>
 
-          <!-- AI (passivo) -->
           <div class="stat" id="lv-ai-wrap" style="display:none;">
             <div class="stat-label">AI <span class="lv-passive-label">passivo</span></div>
             <div class="stat-bar"><div class="stat-fill" id="lv-ai-fill" style="width:0%"></div></div>
@@ -285,18 +323,21 @@
             </div>
           </div>
         </div>
-
       </section>
 
     </div><!-- /panel-lovable -->
 
-    <!-- Shared: actions, settings, footer -->
+    <!-- Actions -->
     <section class="actions">
       <button id="export-csv-btn" class="btn">Export CSV</button>
       <button id="settings-btn"   class="btn btn-secondary">Config</button>
     </section>
 
-    <section class="settings" id="settings-panel" hidden>
+  </div><!-- /root -->
+
+  <!-- Settings modal -->
+  <div class="settings-modal" id="settings-modal">
+    <div class="settings-box">
       <h3>Configurações</h3>
       <label class="setting-row">
         <span>Poll fallback (seg)</span>
@@ -322,14 +363,9 @@
         <button id="settings-save"   class="btn">Salvar</button>
         <button id="settings-cancel" class="btn btn-secondary">Cancelar</button>
       </div>
-    </section>
-
-    <footer class="footer">
-      <span id="last-update">—</span>
-      <span id="snap-count">— snapshots</span>
-    </footer>
-
+    </div>
   </div>
+
   <script src="popup.js" type="module"></script>
 </body>
 </html>

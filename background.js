@@ -840,7 +840,10 @@ function actionIconModelKey(model) {
 
 async function updateActionBadgeFromModel(model) {
   if (isClaude5hLockedModel(model)) {
-    await chrome.action.setBadgeText({ text: '' });
+    const badgeText = formatToolbarMinutes(model.minutesToReset5h);
+    await chrome.action.setBadgeText({ text: badgeText });
+    await chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 127] });
+    await chrome.action.setBadgeTextColor({ color: '#ef4444' });
     await chrome.action.setTitle({
       title: `Throttle - Claude 5h esgotada. Reset em ${formatResetCountdown(model.minutesToReset5h)}`
     });
@@ -874,7 +877,7 @@ function renderSpeedometerIcon(size, model) {
   const locked5h = isClaude5hLockedModel(model);
   const paceLabel = formatActionIconLabel(model, uiState);
   if (locked5h) {
-    return renderHourglassIcon(ctx, size, formatToolbarMinutes(model.minutesToReset5h));
+    return renderHourglassIcon(ctx, size);
   }
 
   // Split icon into two zones:
@@ -950,55 +953,60 @@ function renderSpeedometerIcon(size, model) {
   return ctx.getImageData(0, 0, size, size);
 }
 
-function renderHourglassIcon(ctx, size, badgeText = '') {
+function renderHourglassIcon(ctx, size) {
   const scale = size / 16;
-  const top = Math.max(1.5, size * 0.12);
+  const top = Math.max(1.5, size * 0.10);
   const bottom = size - top;
-  const left = Math.max(2, size * 0.2);
+  const left = Math.max(2, size * 0.18);
   const right = size - left;
   const cx = size / 2;
   const midY = size / 2;
-  const neckHalf = Math.max(0.8, size * 0.055);
+  const neckHalf = Math.max(0.8, size * 0.06);
   const stroke = Math.max(1.15, size * 0.08);
   const rimStroke = Math.max(1.2, size * 0.095);
 
-  // Tiny soft shadow keeps the silhouette readable on light and dark themes.
+  // Control point pull for the curved sides (quadratic bezier).
+  // Positive = bulges outward away from center.
+  const bulge = size * 0.18;
+
+  function drawHourglassBody() {
+    // Top bar
+    ctx.moveTo(left, top);
+    ctx.lineTo(right, top);
+    // Bottom bar
+    ctx.moveTo(left, bottom);
+    ctx.lineTo(right, bottom);
+    // Left side — upper bulge curving inward to neck
+    ctx.moveTo(left + stroke * 0.25, top + stroke * 0.55);
+    ctx.quadraticCurveTo(left - bulge, midY, cx - neckHalf, midY);
+    // Left side — neck continuing down, curving out to bottom
+    ctx.quadraticCurveTo(left - bulge, midY, left + stroke * 0.25, bottom - stroke * 0.55);
+    // Right side — upper bulge curving inward to neck
+    ctx.moveTo(right - stroke * 0.25, top + stroke * 0.55);
+    ctx.quadraticCurveTo(right + bulge, midY, cx + neckHalf, midY);
+    // Right side — neck continuing down, curving out to bottom
+    ctx.quadraticCurveTo(right + bulge, midY, right - stroke * 0.25, bottom - stroke * 0.55);
+  }
+
+  // Shadow pass
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineWidth = rimStroke + Math.max(0.4, 0.55 * scale);
   ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(right, top);
-  ctx.moveTo(left, bottom);
-  ctx.lineTo(right, bottom);
-  ctx.moveTo(left + stroke * 0.25, top + stroke * 0.55);
-  ctx.lineTo(cx - neckHalf, midY);
-  ctx.lineTo(left + stroke * 0.25, bottom - stroke * 0.55);
-  ctx.moveTo(right - stroke * 0.25, top + stroke * 0.55);
-  ctx.lineTo(cx + neckHalf, midY);
-  ctx.lineTo(right - stroke * 0.25, bottom - stroke * 0.55);
+  drawHourglassBody();
   ctx.stroke();
 
-  // Glass body, based on a compact classic hourglass icon.
+  // Glass body stroke
   ctx.strokeStyle = '#dbeafe';
   ctx.lineWidth = rimStroke;
   ctx.globalAlpha = 0.98;
   ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(right, top);
-  ctx.moveTo(left, bottom);
-  ctx.lineTo(right, bottom);
-  ctx.moveTo(left + stroke * 0.25, top + stroke * 0.55);
-  ctx.lineTo(cx - neckHalf, midY);
-  ctx.lineTo(left + stroke * 0.25, bottom - stroke * 0.55);
-  ctx.moveTo(right - stroke * 0.25, top + stroke * 0.55);
-  ctx.lineTo(cx + neckHalf, midY);
-  ctx.lineTo(right - stroke * 0.25, bottom - stroke * 0.55);
+  drawHourglassBody();
   ctx.stroke();
   ctx.globalAlpha = 1;
 
-  // Cool glass tint inside the bulb.
+  // Glass fill — upper bulb (curved trapezoid approximation with straight lines inside)
   const glass = ctx.createLinearGradient(0, top, 0, bottom);
   glass.addColorStop(0, 'rgba(96,165,250,0.46)');
   glass.addColorStop(0.5, 'rgba(219,234,254,0.16)');
@@ -1012,6 +1020,7 @@ function renderHourglassIcon(ctx, size, badgeText = '') {
   ctx.closePath();
   ctx.fill();
 
+  // Glass fill — lower bulb
   ctx.beginPath();
   ctx.moveTo(cx - neckHalf * 0.65, midY + stroke * 0.15);
   ctx.lineTo(cx + neckHalf * 0.65, midY + stroke * 0.15);
@@ -1020,6 +1029,7 @@ function renderHourglassIcon(ctx, size, badgeText = '') {
   ctx.closePath();
   ctx.fill();
 
+  // Sand — upper half (draining)
   const sand = '#fbbf24';
   const sandDark = '#d97706';
   ctx.fillStyle = sand;
@@ -1031,6 +1041,7 @@ function renderHourglassIcon(ctx, size, badgeText = '') {
   ctx.closePath();
   ctx.fill();
 
+  // Sand — lower half (accumulating)
   ctx.fillStyle = sandDark;
   ctx.beginPath();
   ctx.moveTo(left + stroke * 1.25, bottom - stroke * 1.35);
@@ -1040,6 +1051,7 @@ function renderHourglassIcon(ctx, size, badgeText = '') {
   ctx.closePath();
   ctx.fill();
 
+  // Sand trickle through neck
   ctx.strokeStyle = sand;
   ctx.lineWidth = Math.max(0.8, size * 0.055);
   ctx.beginPath();
@@ -1047,99 +1059,17 @@ function renderHourglassIcon(ctx, size, badgeText = '') {
   ctx.lineTo(cx, midY + stroke * 0.9);
   ctx.stroke();
 
-  // Small highlight on the upper-left glass edge.
+  // Highlight on upper-left glass edge
   ctx.strokeStyle = 'rgba(255,255,255,0.82)';
   ctx.lineWidth = Math.max(0.65, size * 0.04);
   ctx.beginPath();
   ctx.moveTo(left + stroke * 0.95, top + stroke * 1.2);
-  ctx.lineTo(cx - neckHalf * 1.3, midY - stroke * 0.55);
+  ctx.quadraticCurveTo(left - bulge * 0.5, midY * 0.7, cx - neckHalf * 1.3, midY - stroke * 0.55);
   ctx.stroke();
-
-  drawActionIconBadgeText(ctx, {
-    text: badgeText,
-    x: 0,
-    y: Math.round(size * 0.64),
-    width: size,
-    height: Math.round(size * 0.36),
-    color: '#ef4444',
-  });
 
   return ctx.getImageData(0, 0, size, size);
 }
 
-// 5-tall × 3-wide pixel font for 0-9 and 'm'. Each glyph is a flat array of
-// 15 bits (row-major, top-to-bottom, left-to-right). 1 = filled pixel.
-const PIXEL_GLYPHS = {
-  '0': [1,1,1, 1,0,1, 1,0,1, 1,0,1, 1,1,1],
-  '1': [0,1,0, 1,1,0, 0,1,0, 0,1,0, 1,1,1],
-  '2': [1,1,1, 0,0,1, 1,1,1, 1,0,0, 1,1,1],
-  '3': [1,1,1, 0,0,1, 0,1,1, 0,0,1, 1,1,1],
-  '4': [1,0,1, 1,0,1, 1,1,1, 0,0,1, 0,0,1],
-  '5': [1,1,1, 1,0,0, 1,1,1, 0,0,1, 1,1,1],
-  '6': [1,1,1, 1,0,0, 1,1,1, 1,0,1, 1,1,1],
-  '7': [1,1,1, 0,0,1, 0,1,0, 0,1,0, 0,1,0],
-  '8': [1,1,1, 1,0,1, 1,1,1, 1,0,1, 1,1,1],
-  '9': [1,1,1, 1,0,1, 1,1,1, 0,0,1, 1,1,1],
-  'm': [0,0,0, 1,0,1, 1,1,1, 1,0,1, 1,0,1],
-};
-
-function drawActionIconBadgeText(ctx, opts) {
-  const text = typeof opts?.text === 'string' && opts.text ? opts.text : '';
-  if (!text) return;
-
-  const canvasW = Number.isFinite(opts?.width) ? opts.width : 16;
-  const regionY = Number.isFinite(opts?.y) ? opts.y : 0;
-  const regionH = Number.isFinite(opts?.height) ? opts.height : 7;
-  const color = opts?.color || '#ef4444';
-
-  // Scale pixel size so glyphs fill ~80% of region height (5 rows).
-  const px = Math.max(1, Math.floor(regionH * 0.8 / 5));
-  const gap = 1; // 1px between glyphs
-  const glyphW = 3 * px;
-  const glyphH = 5 * px;
-
-  const chars = text.split('').filter(c => PIXEL_GLYPHS[c]);
-  const totalW = chars.length * glyphW + Math.max(0, chars.length - 1) * gap;
-  let drawX = Math.round((canvasW - totalW) / 2);
-  // Vertically center in region, nudge 1px down for visual weight
-  const drawY = Math.round(regionY + (regionH - glyphH) / 2) + 1;
-
-  ctx.save();
-  ctx.fillStyle = color;
-
-  // Thin dark halo for readability — paint shadow pixels first
-  ctx.globalAlpha = 0.7;
-  ctx.fillStyle = 'rgba(0,0,0,0.85)';
-  for (const ch of chars) {
-    const bits = PIXEL_GLYPHS[ch];
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 3; c++) {
-        if (!bits[r * 3 + c]) continue;
-        const bx = drawX + c * px;
-        const by = drawY + r * px;
-        ctx.fillRect(bx - 1, by - 1, px + 2, px + 2);
-      }
-    }
-    drawX += glyphW + gap;
-  }
-
-  // Reset drawX, paint foreground pixels
-  drawX = Math.round((canvasW - totalW) / 2);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = color;
-  for (const ch of chars) {
-    const bits = PIXEL_GLYPHS[ch];
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 3; c++) {
-        if (!bits[r * 3 + c]) continue;
-        ctx.fillRect(drawX + c * px, drawY + r * px, px, px);
-      }
-    }
-    drawX += glyphW + gap;
-  }
-
-  ctx.restore();
-}
 
 function drawIconArc(ctx, cx, cy, radius, fromPace, toPace, color) {
   const from = paceToTopArcRad(fromPace);

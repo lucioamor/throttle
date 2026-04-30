@@ -12,14 +12,21 @@ html, body {
 
 .root {
   width: 380px;
-  padding: 14px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .provider-panel {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-panel[hidden] {
+  display: none !important;
 }
 
 .panel-lock-overlay {
@@ -69,7 +76,7 @@ html, body {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #1f1f23;
 }
 
@@ -138,7 +145,7 @@ html, body {
   background: linear-gradient(180deg, #111113, #0a0a0b);
   border: 1px solid #1f1f23;
   border-radius: 10px;
-  padding: 10px 10px 14px;
+  padding: 6px 10px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -173,8 +180,26 @@ html, body {
 .speedo-legend.warn { color: #fca5a5; font-weight: 600; }
 .speedo-legend.ok { color: #86efac; }
 
+.speedo-arc {
+  opacity: 0.24;
+  transition: opacity 0.35s ease, stroke-width 0.35s ease, filter 0.35s ease;
+}
+
+.speedo-arc[data-speedo-band="low"] { --speedo-glow: rgba(59, 130, 246, 0.7); }
+.speedo-arc[data-speedo-band="healthy"] { --speedo-glow: rgba(34, 197, 94, 0.7); }
+.speedo-arc[data-speedo-band="attention"] { --speedo-glow: rgba(234, 179, 8, 0.7); }
+.speedo-arc[data-speedo-band="critical"] { --speedo-glow: rgba(239, 68, 68, 0.7); }
+
+.speedo-arc.speedo-arc-active {
+  opacity: 1;
+  stroke-width: 16;
+  filter: drop-shadow(0 0 5px var(--speedo-glow));
+}
+
 .speedo.speedo-idle .speedo-arc {
-  opacity: 0.35 !important;
+  opacity: 0.24 !important;
+  stroke-width: 14;
+  filter: none;
 }
 
 .speedo-needle-redline {
@@ -200,30 +225,30 @@ html, body {
 .stats {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .stat {
   background: #111113;
   border: 1px solid #1f1f23;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .stat-label {
   font-size: 10px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.12em;
   color: #71717a;
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .stat-bar {
-  height: 6px;
+  height: 5px;
   background: #27272a;
   border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .stat-fill {
@@ -285,10 +310,10 @@ html, body {
 }
 
 .stat-eta {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
   border-top: 1px dashed #27272a;
-  font-size: 11px;
+  font-size: 10px;
   color: #a1a1aa;
   font-family: ui-monospace, monospace;
 }
@@ -303,7 +328,7 @@ html, body {
   background: #111113;
   border: 1px solid #1f1f23;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .section-title {
@@ -311,8 +336,8 @@ html, body {
   justify-content: space-between;
   font-size: 10px;
   color: #71717a;
-  margin-bottom: 8px;
-  letter-spacing: 0.15em;
+  margin-bottom: 6px;
+  letter-spacing: 0.12em;
   font-weight: 700;
 }
 
@@ -376,14 +401,14 @@ html, body {
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 .btn {
   background: #18181b;
   border: 1px solid #27272a;
   color: #fafafa;
-  padding: 9px 12px;
+  padding: 7px 12px;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
@@ -402,22 +427,7 @@ html, body {
   background: transparent;
 }
 
-/* ----- Settings panel ----- */
-.settings {
-  background: #111113;
-  border: 1px solid #1f1f23;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.settings h3 {
-  font-size: 11px;
-  color: #f59e0b;
-  margin-bottom: 10px;
-  letter-spacing: 0.15em;
-  font-weight: 700;
-}
-
+/* ----- Settings (shared rows used in modal) ----- */
 .setting-row {
   display: flex;
   justify-content: space-between;
@@ -461,15 +471,4 @@ html, body {
 
 .settings-actions .btn {
   flex: 1;
-}
-
-/* ----- Footer ----- */
-.footer {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #52525b;
-  font-family: ui-monospace, monospace;
-  padding-top: 8px;
-  border-top: 1px solid #1f1f23;
 }

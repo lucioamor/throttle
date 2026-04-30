@@ -131,7 +131,7 @@
           flex-shrink: 0;
         }
         .usage-seg {
-          padding-left: 4px;
+          padding-left: 10px;
           padding-right: 10px;
         }
 
@@ -180,6 +180,26 @@
         }
         .sparkline-track {
           opacity: 0.35;
+        }
+        .sparkline-divider {
+          opacity: 0;
+          transition: opacity 0.2s ease;
+        }
+        .capsule:hover .sparkline-divider {
+          opacity: 0.8;
+        }
+        .speedo-arc {
+          opacity: 0.24;
+          transition: opacity 0.25s ease, stroke-width 0.25s ease, filter 0.25s ease;
+        }
+        .speedo-arc[data-speedo-band="low"] { --speedo-glow: rgba(59, 130, 246, 0.85); }
+        .speedo-arc[data-speedo-band="healthy"] { --speedo-glow: rgba(34, 197, 94, 0.85); }
+        .speedo-arc[data-speedo-band="attention"] { --speedo-glow: rgba(234, 179, 8, 0.85); }
+        .speedo-arc[data-speedo-band="critical"] { --speedo-glow: rgba(239, 68, 68, 0.85); }
+        .speedo-arc.speedo-arc-active {
+          opacity: 1;
+          stroke-width: 3.2;
+          filter: drop-shadow(0 0 3px var(--speedo-glow));
         }
 
         /* Tag (5H, 7D) */
@@ -267,6 +287,7 @@
         .pace-val[data-status="red"]    { color: #f87171; text-shadow: 0 0 10px rgba(239,68,68,0.8); animation: pulse 2s ease-in-out infinite; }
         .pace-val[data-status="yellow"] { color: #fbbf24; }
         .pace-val[data-status="blue"]   { color: #60a5fa; }
+        .pace-val[data-status="green"]  { color: #86efac; }
 
         /* Seta de trend */
         .trend {
@@ -351,10 +372,10 @@
         <div class="speedo-wrap" id="speedo-wrap">
           <svg width="28" height="18" viewBox="0 0 28 18" id="speedo-svg">
             <path d="M 2 16 A 12 12 0 0 1 26 16" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2.8" stroke-linecap="round"/>
-            <path d="M 2 16 A 12 12 0 0 1 8 6"    fill="none" stroke="#1e40af" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
-            <path d="M 8 6 A 12 12 0 0 1 14 4.5"   fill="none" stroke="#16a34a" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
-            <path d="M 14 4.5 A 12 12 0 0 1 20 6"  fill="none" stroke="#ca8a04" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
-            <path d="M 20 6 A 12 12 0 0 1 26 16"   fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round" opacity="0.75"/>
+            <path class="speedo-arc" data-speedo-band="low" d="M 2 16 A 12 12 0 0 1 8 6"    fill="none" stroke="#1e40af" stroke-width="2.8" stroke-linecap="round"/>
+            <path class="speedo-arc" data-speedo-band="healthy" d="M 8 6 A 12 12 0 0 1 14 4.5"   fill="none" stroke="#16a34a" stroke-width="2.8" stroke-linecap="round"/>
+            <path class="speedo-arc" data-speedo-band="attention" d="M 14 4.5 A 12 12 0 0 1 20 6"  fill="none" stroke="#ca8a04" stroke-width="2.8" stroke-linecap="round"/>
+            <path class="speedo-arc" data-speedo-band="critical" d="M 20 6 A 12 12 0 0 1 26 16"   fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round"/>
             <line id="needle"
               x1="14" y1="16" x2="14" y2="5"
               stroke="#f59e0b" stroke-width="2" stroke-linecap="round"
@@ -364,6 +385,7 @@
           <span class="pace-val" id="pace-val">—</span>
           <svg id="sparkline-svg" viewBox="0 0 64 18" aria-label="Curva de consumo">
             <path id="sparkline-track" class="sparkline-track" d="M 1 15 H 63" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.2" stroke-linecap="round"/>
+            <g id="sparkline-dividers"></g>
             <path id="sparkline-path" d="" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
             <circle id="sparkline-dot" cx="63" cy="15" r="1.6" fill="#22c55e"/>
           </svg>
@@ -418,6 +440,30 @@
     return isLocked || uiState === 'critical';
   }
 
+  function speedoBandForPace(pace) {
+    if (!Number.isFinite(pace)) return null;
+    if (pace < 66) return 'low';
+    if (pace < 100) return 'healthy';
+    if (pace < 134) return 'attention';
+    return 'critical';
+  }
+
+  function setSpeedoArcForPace(pace) {
+    const activeBand = speedoBandForPace(pace);
+    shadow?.querySelectorAll('.speedo-arc').forEach((arc) => {
+      arc.classList.toggle('speedo-arc-active', arc.dataset.speedoBand === activeBand);
+    });
+  }
+
+  function paceStatusForSpeedoBand(pace) {
+    const band = speedoBandForPace(pace);
+    if (band === 'low') return 'blue';
+    if (band === 'healthy') return 'green';
+    if (band === 'attention') return 'yellow';
+    if (band === 'critical') return 'red';
+    return 'green';
+  }
+
   function sparklineColorFromUiState(uiState, lockOverlay) {
     if (lockOverlay?.kind === 'monthly') return '#52525b';
     if (lockOverlay?.kind === 'window' || lockOverlay?.active || uiState === 'critical') return '#ef4444';
@@ -431,22 +477,48 @@
     const path = shadow.getElementById('sparkline-path');
     const dot = shadow.getElementById('sparkline-dot');
     const track = shadow.getElementById('sparkline-track');
-    if (!sparkline || !path || !dot || !track) return;
+    const dividers = shadow.getElementById('sparkline-dividers');
+    if (!sparkline || !path || !dot || !track || !dividers) return;
 
     const series = analysis?.sparkline;
     if (!series?.path || !Array.isArray(series.points) || series.points.length < 2) {
       sparkline.hidden = true;
+      dividers.innerHTML = '';
       return;
     }
 
     const color = sparklineColorFromUiState(uiState, lockOverlay);
+    const points = series.points;
+    const isFlat = points.every((point) => Math.abs(point.y - points[0].y) < 0.01);
+    const isZeroFlat = isFlat && points.every((point) => Number.isFinite(point.value) && point.value <= 0.01);
+    const displayPath = isZeroFlat
+      ? `M ${points[0].x.toFixed(2)} 15 H ${points[points.length - 1].x.toFixed(2)}`
+      : series.path;
+    const displayDotY = isZeroFlat ? 15 : points[points.length - 1].y;
+
     sparkline.hidden = false;
-    path.setAttribute('d', series.path);
+    path.setAttribute('d', displayPath);
     path.style.stroke = color;
-    dot.setAttribute('cx', series.points[series.points.length - 1].x.toFixed(2));
-    dot.setAttribute('cy', series.points[series.points.length - 1].y.toFixed(2));
+    dot.setAttribute('cx', points[points.length - 1].x.toFixed(2));
+    dot.setAttribute('cy', displayDotY.toFixed(2));
     dot.style.fill = color;
     track.style.opacity = lockOverlay?.active ? '0.2' : '0.35';
+    dividers.innerHTML = '';
+    for (const divider of series.dividers || []) {
+      if (!Number.isFinite(divider?.x)) continue;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      const x = divider.x.toFixed(2);
+      line.setAttribute('class', 'sparkline-divider');
+      line.setAttribute('x1', x);
+      line.setAttribute('x2', x);
+      line.setAttribute('y1', '2');
+      line.setAttribute('y2', '16');
+      line.setAttribute('stroke', 'rgba(255,255,255,0.55)');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-dasharray', '2 2');
+      line.setAttribute('stroke-linecap', 'round');
+      dividers.appendChild(line);
+    }
   }
 
   // -------- Render --------
@@ -474,10 +546,12 @@
       const clamped = Math.max(0, Math.min(200, rpmBlend));
       // Meia-circunferência: -90deg (esquerda) a +90deg (direita)
       const angle = -90 + (clamped / 200) * 180;
+      setSpeedoArcForPace(rpmBlend);
       needle.style.transform = `rotate(${angle}deg)`;
       paceEl.textContent = String(Math.min(299, Math.round(rpmBlend)));
-      paceEl.dataset.status = highRisk ? 'red' : (uiState === 'attention' ? 'yellow' : (uiState === 'idle' ? 'blue' : 'green'));
+      paceEl.dataset.status = paceStatusForSpeedoBand(rpmBlend);
     } else {
+      setSpeedoArcForPace(null);
       paceEl.textContent = '—';
       paceEl.dataset.status = 'green';
     }
