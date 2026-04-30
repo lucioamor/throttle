@@ -380,7 +380,7 @@
         <span class="extra" id="extra-msg">—</span>
 
         <div class="lock-overlay" id="lock-overlay">
-          <span class="lock-title" id="lock-title">Limite esgotado</span>
+          <span class="lock-title" id="lock-title">Limit reached</span>
           <span class="lock-sub" id="lock-sub">reset —</span>
         </div>
 
@@ -544,7 +544,7 @@
 
     const lockTitle = shadow.getElementById('lock-title');
     const lockSub = shadow.getElementById('lock-sub');
-    if (lockTitle) lockTitle.textContent = lockOverlay.title || 'Limite esgotado';
+    if (lockTitle) lockTitle.textContent = lockOverlay.title || 'Limit reached';
     if (lockSub) lockSub.textContent = lockOverlay.detail || 'reset —';
   }
 

@@ -412,7 +412,7 @@
         <span class="extra" id="extra-msg">—</span>
 
         <div class="lock-overlay" id="lock-overlay">
-          <span class="lock-title" id="lock-title">Limite esgotado</span>
+          <span class="lock-title" id="lock-title">Limit reached</span>
           <span class="lock-sub" id="lock-sub">reset —</span>
         </div>
 
@@ -560,15 +560,15 @@
     if (trend === 'up') {
       trendEl.textContent = '↑';
       trendEl.dataset.dir = 'up';
-      trendEl.title = 'acelerando';
+      trendEl.title = 'accelerating';
     } else if (trend === 'down') {
       trendEl.textContent = '↓';
       trendEl.dataset.dir = 'down';
-      trendEl.title = 'desacelerando';
+      trendEl.title = 'decelerating';
     } else {
       trendEl.textContent = '→';
       trendEl.dataset.dir = 'stable';
-      trendEl.title = 'ritmo estável';
+      trendEl.title = 'stable pace';
     }
 
     renderSparkline(analysis, uiState, lockOverlay);
@@ -600,7 +600,7 @@
         aux5h.textContent = `reset ${fmtMin(minutesToReset5h)}`;
         aux5h.dataset.warn = 'true';
       } else if (inRisk) {
-        aux5h.textContent = `zera em ${fmtMin(etaToLimit)}`;
+        aux5h.textContent = `zeroes in ${fmtMin(etaToLimit)}`;
         aux5h.dataset.warn = 'true';
       } else {
         aux5h.textContent = `reset ${fmtMin(minutesToReset5h)}`;
@@ -613,7 +613,7 @@
     if (latest.u7d !== null) {
       badge7d.dataset.risk = highRisk ? 'high' : (uiState === 'attention' ? 'medium' : 'low');
       badge7d.textContent = `7D ${latest.u7d.toFixed(0)}%`;
-      badge7d.title = `Janela semanal: ${latest.u7d.toFixed(1)}% — reset ${fmtMin(minutesToReset7d)}`;
+      badge7d.title = `Weekly window: ${latest.u7d.toFixed(1)}% — reset ${fmtMin(minutesToReset7d)}`;
     } else {
       badge7d.dataset.risk = 'low';
       badge7d.textContent = '7D —';
@@ -629,7 +629,7 @@
 
     const lockTitle = shadow.getElementById('lock-title');
     const lockSub = shadow.getElementById('lock-sub');
-    if (lockTitle) lockTitle.textContent = lockOverlay.title || 'Limite esgotado';
+    if (lockTitle) lockTitle.textContent = lockOverlay.title || 'Limit reached';
     if (lockSub) lockSub.textContent = lockOverlay.detail || 'reset —';
   }
 

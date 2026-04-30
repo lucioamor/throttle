@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en-US">
 <head>
   <meta charset="UTF-8">
   <title>Throttle</title>
@@ -198,7 +198,7 @@
         <div class="speedo-legend" id="speedo-legend">—</div>
         <div class="panel-lock-overlay" id="panel-claude-lock" hidden>
           <div class="panel-lock-icon" id="panel-claude-lock-icon">🔒</div>
-          <div class="panel-lock-title" id="panel-claude-lock-title">Limite esgotado</div>
+          <div class="panel-lock-title" id="panel-claude-lock-title">Limit reached</div>
           <div class="panel-lock-sub" id="panel-claude-lock-sub">reset —</div>
         </div>
       </section>
@@ -231,7 +231,7 @@
           </div>
 
           <div class="stat" id="stat-extra-wrap" style="display:none;">
-            <div class="stat-label">CRÉDITOS EXTRAS PAGOS</div>
+            <div class="stat-label">PAID EXTRA CREDITS</div>
             <div class="stat-bar"><div class="stat-fill" id="stat-extra-fill" style="width:0%"></div></div>
             <div class="stat-row">
               <span id="stat-extra-pct" class="stat-pct">—</span>
@@ -282,20 +282,20 @@
         <div class="speedo-legend" id="lv-today-legend">—</div>
         <div class="panel-lock-overlay" id="panel-lovable-lock" hidden>
           <div class="panel-lock-icon" id="panel-lovable-lock-icon">🔒</div>
-          <div class="panel-lock-title" id="panel-lovable-lock-title">Limite esgotado</div>
+          <div class="panel-lock-title" id="panel-lovable-lock-title">Limit reached</div>
           <div class="panel-lock-sub" id="panel-lovable-lock-sub">reset —</div>
         </div>
       </section>
 
       <section class="stats">
         <div class="stat">
-          <div class="stat-label">CRÉDITOS GRATUITOS DIÁRIOS</div>
+          <div class="stat-label">DAILY FREE CREDITS</div>
           <div class="lv-dots-wrap" id="lv-daily-dots"></div>
           <div class="lv-daily-text" id="lv-daily-text">—</div>
         </div>
 
         <div class="stat">
-          <div class="stat-label">CICLO MENSAL</div>
+          <div class="stat-label">MONTHLY CYCLE</div>
           <div class="stat-bar"><div class="stat-fill" id="lv-monthly-fill" style="width:0%"></div></div>
           <div class="stat-row">
             <span id="lv-monthly-pct" class="stat-pct">—</span>
@@ -306,7 +306,7 @@
 
         <div class="lv-passive-grid">
           <div class="stat" id="lv-cloud-wrap" style="display:none;">
-            <div class="stat-label">CLOUD <span class="lv-passive-label">passivo</span></div>
+            <div class="stat-label">CLOUD <span class="lv-passive-label">passive</span></div>
             <div class="stat-bar"><div class="stat-fill" id="lv-cloud-fill" style="width:0%"></div></div>
             <div class="stat-row">
               <span id="lv-cloud-pct" class="stat-pct">—</span>
@@ -315,7 +315,7 @@
           </div>
 
           <div class="stat" id="lv-ai-wrap" style="display:none;">
-            <div class="stat-label">AI <span class="lv-passive-label">passivo</span></div>
+            <div class="stat-label">AI <span class="lv-passive-label">passive</span></div>
             <div class="stat-bar"><div class="stat-fill" id="lv-ai-fill" style="width:0%"></div></div>
             <div class="stat-row">
               <span id="lv-ai-pct" class="stat-pct">—</span>
@@ -338,30 +338,30 @@
   <!-- Settings modal -->
   <div class="settings-modal" id="settings-modal">
     <div class="settings-box">
-      <h3>Configurações</h3>
+      <h3>Settings</h3>
       <label class="setting-row">
-        <span>Poll fallback (seg)</span>
+        <span>Poll fallback (sec)</span>
         <input type="number" id="set-poll" min="60" max="600" step="30">
       </label>
       <label class="setting-row">
-        <span>Alerta Claude 5h (%)</span>
+        <span>Claude 5h alert (%)</span>
         <input type="number" id="set-threshold-5h" min="0" max="100" step="5">
       </label>
       <label class="setting-row">
-        <span>Alerta Claude 7d (%)</span>
+        <span>Claude 7d alert (%)</span>
         <input type="number" id="set-threshold-7d" min="0" max="100" step="5">
       </label>
       <label class="setting-row setting-check">
         <input type="checkbox" id="set-alert-redline">
-        <span>Alertar no redline Claude (PACE &gt; 130)</span>
+        <span>Alert on Claude redline (PACE &gt; 130)</span>
       </label>
       <label class="setting-row setting-check">
         <input type="checkbox" id="set-show-bar">
-        <span>Mostrar barra em ambas plataformas</span>
+        <span>Show bar on both platforms</span>
       </label>
       <div class="settings-actions">
-        <button id="settings-save"   class="btn">Salvar</button>
-        <button id="settings-cancel" class="btn btn-secondary">Cancelar</button>
+        <button id="settings-save"   class="btn">Save</button>
+        <button id="settings-cancel" class="btn btn-secondary">Cancel</button>
       </div>
     </div>
   </div>

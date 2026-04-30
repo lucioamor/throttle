@@ -223,7 +223,7 @@ function resolvePopupLockOverlay(analysis) {
       active: true,
       kind: 'window',
       icon: base.icon || '⏳',
-      title: base.title || 'Janela 5h esgotada',
+      title: base.title || '5h window exhausted',
       detail: base.detail || `resets in ${formatResetCountdown(analysis.minutesToReset5h)}`
     };
   }
@@ -240,8 +240,8 @@ function resolvePopupLockOverlay(analysis) {
     active: true,
     kind: base.kind || 'monthly',
     icon: base.icon || '🔒',
-    title: base.title || 'Créditos esgotados',
-    detail: base.detail || 'saldo <= 0'
+    title: base.title || 'Credits exhausted',
+    detail: base.detail || 'balance <= 0'
   };
 }
 
@@ -253,8 +253,8 @@ async function render() {
     renderPanelLockOverlay('claude', null);
     renderPanelLockOverlay('lovable', null);
     setStatusMsg(activeProvider === 'claude'
-      ? 'Abra claude.ai para inicializar'
-      : 'Abra lovable.dev para inicializar');
+      ? 'Open claude.ai to initialize'
+      : 'Open lovable.dev to initialize');
     setFooterState(null);
     return;
   }
@@ -266,7 +266,7 @@ async function render() {
     const analysis = analyze(snapshots);
     if (!analysis.ready) {
       renderPanelLockOverlay('claude', null);
-      setStatusMsg('Aguardando primeiro snapshot...');
+      setStatusMsg('Waiting for first snapshot...');
       setFooterState(null);
       return;
     }
@@ -281,7 +281,7 @@ async function render() {
     const analysis = analyzeLovable(snapshots);
     if (!analysis.ready) {
       renderPanelLockOverlay('lovable', null);
-      setStatusMsg('Aguardando dados do Lovable...');
+      setStatusMsg('Waiting for Lovable data...');
       setFooterState(null);
       return;
     }
@@ -345,7 +345,7 @@ function setFooterState(analysis) {
 
   footerState = {
     latestTs: analysis.latest.t,
-    latestLabel: new Date(analysis.latest.t).toLocaleTimeString('pt-BR', {
+    latestLabel: new Date(analysis.latest.t).toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
@@ -488,8 +488,8 @@ function renderPanelLockOverlay(panel, lockOverlay) {
   const title = document.getElementById(`panel-${panel}-lock-title`);
   const sub = document.getElementById(`panel-${panel}-lock-sub`);
   const icon = document.getElementById(`panel-${panel}-lock-icon`);
-  if (icon) icon.textContent = lockOverlay.icon || 'ðŸ”’';
-  if (title) title.textContent = lockOverlay.title || 'Limite esgotado';
+  if (icon) icon.textContent = lockOverlay.icon || '🔒';
+  if (title) title.textContent = lockOverlay.title || 'Limit reached';
   if (sub) sub.textContent = lockOverlay.detail || 'reset —';
 }
 
@@ -508,14 +508,14 @@ function renderClaudeSpeedo(a) {
   if (uiState === 'loading') {
     value.textContent = '—';
     legend.className = 'speedo-legend';
-    legend.textContent = 'Coletando dados';
+    legend.textContent = 'Collecting data';
     return;
   }
 
   if (uiState === 'idle') {
     value.textContent = '0';
     legend.className = 'speedo-legend';
-    legend.textContent = 'Sem consumo recente';
+    legend.textContent = 'No recent consumption';
     return;
   }
 
@@ -524,7 +524,7 @@ function renderClaudeSpeedo(a) {
     setSpeedoArcForPace(needle, null);
     value.textContent = '—';
     legend.className = 'speedo-legend';
-    legend.textContent = 'Coletando dados';
+    legend.textContent = 'Collecting data';
     return;
   }
 
@@ -539,11 +539,11 @@ function renderClaudeSpeedo(a) {
   } else if (uiState === 'critical' || pace > 130) {
     legend.textContent = `Redlining · ${formatETA(a.etaBlend)} to zero · resets in ${formatETA(a.minutesToReset5h)}`;
   } else if (uiState === 'attention' || pace > 105) {
-    legend.textContent = `Acima do pace · ETA ${formatETA(a.etaBlend)}`;
+    legend.textContent = `Above pace · ETA ${formatETA(a.etaBlend)}`;
   } else if (pace < 50) {
-    legend.textContent = `Pace baixo · resets in ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Low pace · resets in ${formatETA(a.minutesToReset5h)}`;
   } else {
-    legend.textContent = `Pace saudável · resets in ${formatETA(a.minutesToReset5h)}`;
+    legend.textContent = `Healthy pace · resets in ${formatETA(a.minutesToReset5h)}`;
   }
 }
 
@@ -569,7 +569,7 @@ function renderClaudeStats(a) {
     fill5h.style.width = '100%';
     fill5h.style.background = '#52525b';
     pct5h.textContent = '—';
-    reset5h.textContent = 'coletando...';
+    reset5h.textContent = 'collecting...';
     eta60.textContent  = '—';
     eta300.textContent = '—';
   } else if (uiState === 'idle') {
@@ -584,7 +584,7 @@ function renderClaudeStats(a) {
     fill5h.style.background = colorForClaude5h(l.u5h, uiState, lockOverlay);
     pct5h.textContent = `${l.u5h.toFixed(1)}%`;
     reset5h.textContent = locked5h
-      ? `volta em ${formatResetCountdown(a.minutesToReset5h)}`
+      ? `back in ${formatResetCountdown(a.minutesToReset5h)}`
       : formatReset5h(a.minutesToReset5h);
     eta60.textContent  = locked5h ? '—' : formatETA(a.eta60);
     eta300.textContent = locked5h ? '—' : formatETA(a.eta300);
@@ -640,11 +640,11 @@ function renderLovablePanel(a) {
     todayVal.textContent = '—';
     todayNeedle.classList.remove('speedo-needle-redline');
     todayLegend.className = 'speedo-legend';
-    todayLegend.textContent = 'Coletando dados';
+    todayLegend.textContent = 'Collecting data';
   } else if (uiState === 'idle') {
     todayVal.textContent = '0';
     todayLegend.className = 'speedo-legend';
-    todayLegend.textContent = 'Sem consumo recente';
+    todayLegend.textContent = 'No recent consumption';
   } else if (a.todayPace !== null) {
     setSpeedoNeedleForPace(todayNeedle, a.todayPace);
     todayVal.textContent = Math.round(a.todayPace);
@@ -658,14 +658,14 @@ function renderLovablePanel(a) {
     } else if (uiState === 'critical') {
       todayLegend.textContent = `Redlining · ${formatETA(a.etaDailyExhaust)} to zero · reset ${formatETA(a.minutesToDailyReset)}`;
     } else if (uiState === 'attention') {
-      todayLegend.textContent = `Atenção · esgota ${formatETA(a.etaDailyExhaust)}`;
+      todayLegend.textContent = `Attention · exhausts in ${formatETA(a.etaDailyExhaust)}`;
     } else {
-      todayLegend.textContent = `Pace diário saudável · reset ${formatETA(a.minutesToDailyReset)}`;
+      todayLegend.textContent = `Healthy daily pace · reset ${formatETA(a.minutesToDailyReset)}`;
     }
   } else {
     todayVal.textContent = '—';
     todayLegend.className = 'speedo-legend';
-    todayLegend.textContent = 'Coletando dados';
+    todayLegend.textContent = 'Collecting data';
   }
 
   // Dots de créditos diários
@@ -682,7 +682,7 @@ function renderLovablePanel(a) {
     dotsEl.appendChild(dot);
   }
   document.getElementById('lv-daily-text').innerHTML =
-    `<span class="lv-daily-remaining" data-level="${dailyLevel}">${formatLovableCredits(remaining)}</span> de ${formatLovableCredits(total)} restantes · reset ${formatETA(a.minutesToDailyReset)}`;
+    `<span class="lv-daily-remaining" data-level="${dailyLevel}">${formatLovableCredits(remaining)}</span> of ${formatLovableCredits(total)} remaining · reset ${formatETA(a.minutesToDailyReset)}`;
 
   // MONTHLY BURN
   const monthFill  = document.getElementById('lv-monthly-fill');
@@ -696,7 +696,7 @@ function renderLovablePanel(a) {
     monthPct.textContent  = `${a.monthlyPct.toFixed(1)}%`;
     monthSub.textContent  = `reset ${formatETA(a.minutesToMonthlyReset)}`;
     monthBurn.textContent = a.monthlyBurn !== null
-      ? `BURN ${Math.round(a.monthlyBurn)}${a.monthlyProjectedDays !== null ? ` · ${Math.round(a.monthlyProjectedDays)}d de saldo` : ''}`
+      ? `BURN ${Math.round(a.monthlyBurn)}${a.monthlyProjectedDays !== null ? ` · ${Math.round(a.monthlyProjectedDays)}d remaining` : ''}`
       : '—';
   }
 
@@ -779,7 +779,7 @@ function renderHeatmap(snapshots) {
     else if (ratio > 0) tier = 1;
     el.classList.add(`scale-${tier}`);
     const hh = String(t.getHours()).padStart(2, '0');
-    const dd = t.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    const dd = t.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit' });
     el.title = `${dd} ${hh}h — +${delta.toFixed(1)}%`;
     heatmap.appendChild(el);
   }
@@ -787,7 +787,7 @@ function renderHeatmap(snapshots) {
   if (snapshots.length > 0) {
     const from = new Date(snapshots[0].t);
     document.getElementById('heatmap-range').textContent =
-      `desde ${from.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`;
+      `since ${from.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`;
   }
 }
 

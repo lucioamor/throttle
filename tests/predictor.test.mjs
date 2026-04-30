@@ -95,7 +95,7 @@ test('analyze maps idle uiState to neutral mini-badge copy', () => {
   const result = analyze(snaps);
   assert.equal(result.ready, true);
   assert.equal(result.uiState, 'idle');
-  assert.equal(result.operationalMsg, '0% · tranquilo');
+  assert.equal(result.operationalMsg, '0% · quiet');
 });
 
 test('analyze does not report zero pace when 5h window is exhausted', () => {
@@ -496,7 +496,7 @@ test('analyzeLovable maps idle uiState to neutral mini-badge copy', () => {
   const result = analyzeLovable(snaps);
   assert.equal(result.ready, true);
   assert.equal(result.uiState, 'idle');
-  assert.equal(result.operationalMsg, '0% · tranquilo');
+  assert.equal(result.operationalMsg, '0% · quiet');
 });
 
 test('resolveUiState returns locked_monthly when monthly credits are exhausted', () => {

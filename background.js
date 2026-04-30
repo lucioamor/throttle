@@ -80,7 +80,9 @@ function isClaude5hLockedAnalysis(analysis) {
 
 function formatToolbarMinutes(minutes) {
   if (!Number.isFinite(minutes)) return '';
-  return `${Math.max(1, Math.min(300, Math.ceil(minutes)))}m`;
+  const clamped = Math.max(1, Math.min(300 * 60, Math.ceil(minutes)));
+  if (clamped >= 60) return `${Math.floor(clamped / 60)}h`;
+  return `${clamped}m`;
 }
 
 function formatResetCountdown(minutes) {
@@ -139,6 +141,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM_NAME) return;
 
   const settings = await getSettings();
+  let polled = false;
 
   const claudeId = await getActiveProviderId('claude');
   if (claudeId) {
@@ -146,6 +149,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const lastAge = snaps.length ? Date.now() - snaps[snaps.length - 1].t : Infinity;
     if (lastAge > settings.activePollSeconds * 1000 * 0.9) {
       await pollClaude(claudeId, { origin: 'alarm' });
+      polled = true;
     }
     await checkStale(claudeId, snaps, 'Claude');
   }
@@ -157,11 +161,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (lastAge > settings.activePollSeconds * 1000 * 0.9) {
       await pollLovable(lovableId, { origin: 'alarm' });
       snaps = await getSnapshots(lovableId);
+      polled = true;
     }
     await checkStale(lovableId, snaps, 'Lovable');
   }
 
-  await refreshActionIcon();
+  // Only refresh icon directly when no poll ran; polls call updateActionIconFromAnalysis
+  // internally via handleClaudeUsage/handleLovableUsage, so a second call here would
+  // race against the in-flight icon render and could revert the hourglass to speedometer.
+  if (!polled) await refreshActionIcon();
 });
 
 async function checkStale(providerId, snaps, providerLabel) {
@@ -877,32 +885,46 @@ function renderSpeedometerIcon(size, model) {
   const locked5h = isClaude5hLockedModel(model);
   const paceLabel = formatActionIconLabel(model, uiState);
   if (locked5h) {
-    return renderHourglassIcon(ctx, size);
+    const shift = Math.round(size * 0.125);
+    ctx.save();
+    ctx.translate(-shift, 0);
+    const result = renderHourglassIcon(ctx, size);
+    ctx.restore();
+    return result;
   }
 
   // Split icon into two zones:
   // top => speedometer; bottom => numeric digits.
+  // Shift 2px left to give clearance from the badge in the bottom-right corner.
+  const shift = Math.round(size * 0.125); // ~2px at 16px, scales up
   const digitsBandHeight = Math.max(5, Math.round(size * 0.38));
   const digitsBandTop = size - digitsBandHeight;
   const gaugeBottom = digitsBandTop - 1;
-  const cx = size / 2;
+  const cx = size / 2 - shift;
   const cy = gaugeBottom;
   const radius = Math.max(2.6, Math.min(size * 0.34, gaugeBottom - 1.6));
-  const arcWidth = Math.max(1.1, size * 0.095);
+  const arcWidth = Math.max(1.1, size * 0.1);
 
+  // Track — dark groove, more defined than before
   ctx.lineWidth = arcWidth;
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
   ctx.beginPath();
   ctx.arc(cx, cy, radius, Math.PI, Math.PI * 2, false);
   ctx.stroke();
 
-  const segmentAlpha = uiState === 'loading' ? 0.55 : 0.95;
+  // Inner shadow on track for depth
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = arcWidth * 0.45;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, Math.PI, Math.PI * 2, false);
+  ctx.stroke();
+
+  const segmentAlpha = uiState === 'loading' ? 0.45 : 1.0;
   ctx.globalAlpha = segmentAlpha;
-  // Same visual proportions as the pill gauge: wide edges, slimmer middle bands.
-  drawIconArc(ctx, cx, cy, radius, 0, 66, '#3b82f6');
-  drawIconArc(ctx, cx, cy, radius, 66, 100, '#22c55e');
-  drawIconArc(ctx, cx, cy, radius, 100, 134, '#f59e0b');
-  drawIconArc(ctx, cx, cy, radius, 134, 200, '#ef4444');
+  drawIconArc(ctx, cx, cy, radius, 0, 66, '#60a5fa');
+  drawIconArc(ctx, cx, cy, radius, 66, 100, '#4ade80');
+  drawIconArc(ctx, cx, cy, radius, 100, 134, '#fbbf24');
+  drawIconArc(ctx, cx, cy, radius, 134, 200, '#f87171');
   ctx.globalAlpha = 1;
 
   const drawPace = Number.isFinite(model.pace) && uiState !== 'loading' && uiState !== 'idle'
@@ -910,40 +932,53 @@ function renderSpeedometerIcon(size, model) {
     : 0;
   const angleDeg = -90 + (drawPace / ACTION_ICON_MAX_PACE) * 180;
   const angle = (angleDeg * Math.PI) / 180;
-  const needleLen = Math.max(1, radius - arcWidth * 0.55);
+  const needleLen = Math.max(1, radius - arcWidth * 0.45);
   const x2 = cx + Math.sin(angle) * needleLen;
   const y2 = cy - Math.cos(angle) * needleLen;
 
-  // Keep needle color fixed to the same yellow from the pill speedometer.
-  const needleColor = '#f59e0b';
-  ctx.strokeStyle = needleColor;
-  ctx.lineWidth = Math.max(1.2, size * 0.11);
+  const needleColor = '#fbbf24';
+  // Needle shadow for crispness on dark bg
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = Math.max(1.8, size * 0.13);
+  ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
+  ctx.strokeStyle = needleColor;
+  ctx.lineWidth = Math.max(1.1, size * 0.09);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // Pivot dot
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(1.4, size * 0.1), 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = needleColor;
   ctx.beginPath();
-  ctx.arc(cx, cy, Math.max(1.1, size * 0.085), 0, Math.PI * 2);
+  ctx.arc(cx, cy, Math.max(1.0, size * 0.075), 0, Math.PI * 2);
   ctx.fill();
 
-  // Keep full transparency; only draw a subtle separator line.
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  // Separator — slightly more visible
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, digitsBandTop + 0.5);
   ctx.lineTo(size, digitsBandTop + 0.5);
   ctx.stroke();
 
-  let labelColor = '#f8fafc';
-  if (uiState === 'loading') labelColor = '#cbd5e1';
-  else if (highRisk) labelColor = '#fecaca';
+  let labelColor = '#f1f5f9';
+  if (uiState === 'loading') labelColor = 'rgba(203,213,225,0.7)';
+  else if (highRisk) labelColor = '#fca5a5';
   else if (uiState === 'attention') labelColor = '#fde68a';
 
   drawActionIconDigits(ctx, {
     text: paceLabel,
-    x: 0,
+    x: -shift,
     y: digitsBandTop,
     width: size,
     height: digitsBandHeight,
@@ -961,9 +996,9 @@ function renderHourglassIcon(ctx, size) {
   const right = size - left;
   const cx = size / 2;
   const midY = size / 2;
-  const neckHalf = Math.max(0.8, size * 0.06);
-  const stroke = Math.max(1.15, size * 0.08);
-  const rimStroke = Math.max(1.2, size * 0.095);
+  const neckHalf = Math.max(1.5, size * 0.15);
+  const stroke = Math.max(1.0, size * 0.075);
+  const rimStroke = Math.max(0.7, size * 0.055);
 
   // Control point pull for the curved sides (quadratic bezier).
   // Positive = bulges outward away from center.
@@ -991,16 +1026,16 @@ function renderHourglassIcon(ctx, size) {
   // Shadow pass
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-  ctx.lineWidth = rimStroke + Math.max(0.4, 0.55 * scale);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = rimStroke + Math.max(0.3, 0.4 * scale);
   ctx.beginPath();
   drawHourglassBody();
   ctx.stroke();
 
-  // Glass body stroke
-  ctx.strokeStyle = '#dbeafe';
+  // Glass body stroke — subtle, dim, seamless on dark bg
+  ctx.strokeStyle = 'rgba(148,163,184,0.65)';
   ctx.lineWidth = rimStroke;
-  ctx.globalAlpha = 0.98;
+  ctx.globalAlpha = 1.0;
   ctx.beginPath();
   drawHourglassBody();
   ctx.stroke();
@@ -1015,15 +1050,15 @@ function renderHourglassIcon(ctx, size) {
   ctx.beginPath();
   ctx.moveTo(left + stroke * 0.85, top + stroke * 1.05);
   ctx.lineTo(right - stroke * 0.85, top + stroke * 1.05);
-  ctx.lineTo(cx + neckHalf * 0.65, midY - stroke * 0.15);
-  ctx.lineTo(cx - neckHalf * 0.65, midY - stroke * 0.15);
+  ctx.lineTo(cx + neckHalf * 1.0, midY - stroke * 0.15);
+  ctx.lineTo(cx - neckHalf * 1.0, midY - stroke * 0.15);
   ctx.closePath();
   ctx.fill();
 
   // Glass fill — lower bulb
   ctx.beginPath();
-  ctx.moveTo(cx - neckHalf * 0.65, midY + stroke * 0.15);
-  ctx.lineTo(cx + neckHalf * 0.65, midY + stroke * 0.15);
+  ctx.moveTo(cx - neckHalf * 1.0, midY + stroke * 0.15);
+  ctx.lineTo(cx + neckHalf * 1.0, midY + stroke * 0.15);
   ctx.lineTo(right - stroke * 0.85, bottom - stroke * 1.05);
   ctx.lineTo(left + stroke * 0.85, bottom - stroke * 1.05);
   ctx.closePath();
@@ -1036,8 +1071,8 @@ function renderHourglassIcon(ctx, size) {
   ctx.beginPath();
   ctx.moveTo(left + stroke * 1.2, top + stroke * 1.45);
   ctx.lineTo(right - stroke * 1.2, top + stroke * 1.45);
-  ctx.lineTo(cx + neckHalf * 0.35, midY - stroke * 0.45);
-  ctx.lineTo(cx - neckHalf * 0.35, midY - stroke * 0.45);
+  ctx.lineTo(cx + neckHalf * 0.85, midY - stroke * 0.45);
+  ctx.lineTo(cx - neckHalf * 0.85, midY - stroke * 0.45);
   ctx.closePath();
   ctx.fill();
 
@@ -1046,8 +1081,8 @@ function renderHourglassIcon(ctx, size) {
   ctx.beginPath();
   ctx.moveTo(left + stroke * 1.25, bottom - stroke * 1.35);
   ctx.lineTo(right - stroke * 1.25, bottom - stroke * 1.35);
-  ctx.lineTo(cx + Math.max(1.2, size * 0.12), midY + stroke * 1.15);
-  ctx.lineTo(cx - Math.max(1.2, size * 0.12), midY + stroke * 1.15);
+  ctx.lineTo(cx + neckHalf * 0.85, midY + stroke * 1.15);
+  ctx.lineTo(cx - neckHalf * 0.85, midY + stroke * 1.15);
   ctx.closePath();
   ctx.fill();
 
