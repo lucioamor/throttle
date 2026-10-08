@@ -2,7 +2,7 @@
 
 **Pace control for AI limits.**
 
-Chrome extension that turns the opaque limits of Claude.ai and Lovable into measurable operational rhythm. Real-time consumption speedometer, depletion forecasting, historical sparkline, redline alerts — 100% local.
+Chrome extension that turns the opaque limits of Claude.ai and Lovable into measurable operational rhythm. Real-time consumption speedometer, depletion forecasting, historical sparkline, redline alerts. All data stays on your machine.
 
 Supports Claude.ai and Lovable.dev. Multi-provider architecture ready for OpenAI and Gemini.
 
@@ -113,10 +113,10 @@ Automatically detects organization switches via webRequest. Each org maintains s
 
 ## Installation
 
-1. Download/clone the `throttle/` folder
+1. Clone this repo (or download it as a ZIP and extract it)
 2. Open `chrome://extensions`
 3. Enable **"Developer mode"**
-4. **"Load unpacked"** → select the `throttle/` folder
+4. **"Load unpacked"** → select the cloned folder
 5. Open `claude.ai` and send a message — the bar appears at the top
 6. Open `lovable.dev` to see Lovable credits in the popup
 7. Popup available via the extension icon
@@ -199,13 +199,15 @@ Each provider is a `lib/providers/{name}.js` module with `discover()` and `norma
 
 ## Privacy
 
-- **Zero external telemetry.** No data leaves the machine.
-- **Zero chat content reading.** The extension only reads the numeric `/usage` endpoint.
-- **100% local storage** in `chrome.storage.local`.
-- **No analytics, no tracking, no backend.**
+- **No third-party servers.** The extension only talks to `claude.ai` and `lovable.dev` / `api.lovable.dev` (the services you already use), to read your own usage numbers.
+- **No telemetry, analytics or tracking.** Nothing is sent to the author or any backend.
+- **No chat content reading.** Only numeric usage endpoints are read.
+- **Local storage only**, in `chrome.storage.local`.
 
 ---
 
 ## License
 
-Personal use. Unofficial, no affiliation with Anthropic.
+Licensed under the [Apache License 2.0](./LICENSE). Copyright 2026 Lucio Amorim.
+
+Unofficial project, no affiliation with Anthropic or Lovable.

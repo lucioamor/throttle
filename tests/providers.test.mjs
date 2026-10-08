@@ -91,7 +91,7 @@ test('buildClaudeAccountLabel prioritizes name and email', () => {
     accountName: 'Test User',
     accountEmail: 'user@example.com',
     organizationName: 'Org'
-  }), 'Lucio <user@example.com>');
+  }), 'Test User <user@example.com>');
 
   assert.equal(buildClaudeAccountLabel({
     accountName: null,
